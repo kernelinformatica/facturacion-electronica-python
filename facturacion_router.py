@@ -8,35 +8,27 @@ from afip import Afip as ConexionAFIP
 conexion_afip = ConexionAFIP()
 wsfe_instance = wsfe()
 
+
 # **🔹 Autorizar factura electrónica**
-@facturacion_bp.route('/autorizarFactura', methods=['POST'])
-def autorizarFactura():
+@facturacion_bp.route('/autorizarComprobante', methods=['POST'])
+def autorizarComprobante(id_usuario=0, comprobante=None):
     try:
-        token = request.headers.get("token")
-        json_body = request.get_json()
 
-        if not token:
-            return jsonify({"control": "ERROR", "mensaje": "Token vacío"}), 400
-        if not json_body:
-            return jsonify({"control": "ERROR", "mensaje": "Cuerpo de la solicitud vacío"}), 400
+        if id_usuario == 0:
+            logging.error(f"❌ ID de usuario no proporcionado")
+            return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
 
-        id_factura = json_body.get("idFactura")
-        if not id_factura:
-            return jsonify({"control": "ERROR", "mensaje": "ID de factura no proporcionado"}), 400
+        if comprobante == "" or comprobante is None:
+            logging.error(f"❌ El comprobante a autorizar no pudo ser detectado")
+            return jsonify({"control": "ERROR", "mensaje": "El comprobante a autorizar no pudo ser detectado"}), 400
 
-        # Autenticación con AFIP
-        conexion_afip.autenticar()
+
 
         # Procesar la factura
-        resultado = wsfe_instance.procesarFactura(id_factura)
-        if not resultado:
-            return jsonify({"control": "ERROR", "mensaje": f"Factura con ID {id_factura} no encontrada"}), 404
-
-        # Enviar datos a AFIP
-        resultado = conexion_afip.enviarFactura(resultado)
-        return jsonify({"control": "OK", "resultado": resultado}), 200
+        resultado = wsfe_instance.autorizarComprobante(id_usuario, comprobante)
+        return resultado
     except Exception as e:
-        logging.error(f"Error en autorizarFactura: {e}")
+        logging.error(f"Error en autorizar el comprobante: {e}")
         return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
 
 # **🔹 Validar conexión con AFIP**
@@ -49,7 +41,6 @@ def validarConexionConArca():
     except Exception as e:
         logging.error(f"Error en validarConexionEndpoint: {e}")
         return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
-
 
 
 # **🔹 Obtener autenticación con AFIP**
@@ -97,40 +88,83 @@ def getLogin(id_usuario):
         return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
 
 
-
-
-
 @facturacion_bp.route('/consultarCoprobanteEmitido', methods=['post'])
-def consultarComprobanteEmitido(id_usuario):
-    try:
-        if not id_usuario:
-            return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
+def consultarComprobanteEmitido(id_usuario=0, cbteTipo=0, cbteNro=0, cbtePtoVta=0):
+    if id_usuario == 0 :
+        logging.error(f"❌ ID de usuario no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
 
+    if cbteTipo  == 0:
+        logging.error(f"❌ Tipo de Comprobante no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "Tipo de comprobante no proporcionado"}), 400
+    if cbteNro == 0:
+        logging.error(f"❌ Número de Comprobante no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "Número de Comprobante no proporcionado"}), 400
+
+    if cbtePtoVta == 0:
+        logging.error(f"❌ Punto de venta no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "Punto de venta no proporcionado"}), 400
+    try:
         # Consultar el comprobante emitido
-        response = wsfe_instance.consultarComprobanteEmitido(id_usuario)
+        response = wsfe_instance.consultarComprobanteEmitido(id_usuario, cbteTipo, cbteNro, cbtePtoVta)
+        return response
+    except Exception as e:
+        logging.error(f"Error en consultarComprobanteEmitido: {e}")
+        return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
+
+@facturacion_bp.route('/consultarUltimoCbteAutorizado', methods=['post'])
+def consultarUltimoCbteAutorizado(id_usuario=0,  cbtePtoVta=0, cbteTipo=0):
+    if id_usuario == 0 :
+        logging.error(f"❌ ID de usuario no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
+
+    if cbteTipo  == 0:
+        logging.error(f"❌ Tipo de Comprobante no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "Tipo de comprobante no proporcionado"}), 400
+
+    if cbtePtoVta == 0:
+        logging.error(f"❌ Punto de venta no proporcionado")
+        return jsonify({"control": "ERROR", "mensaje": "Punto de venta no proporcionado"}), 400
+    try:
+        # Consultar el comprobante emitido
+        response = wsfe_instance.ultimoComprobanteAutorizado(id_usuario,  cbtePtoVta, cbteTipo)
         return response
     except Exception as e:
         logging.error(f"Error en consultarComprobanteEmitido: {e}")
         return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
 
 
+@facturacion_bp.route('/consultarPuntosDeVenta', methods=['post'])
+def consultarPtosVentas(id_usuario):
+    try:
+        if not id_usuario:
+            return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
+
+        # Consultar el comprobante emitido
+        response = wsfe_instance.consultarPuntosVenta(id_usuario)
+        return response
+    except Exception as e:
+        logging.error(f"Error en consultarPtosVentas: {e}")
+        return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
 
 
-
-
-
-
-# metodos sin router
 def validarToken(id_usuario):
     try:
         # Obtener el token vigente de la base de datos
         tokenResponse = getLogin(id_usuario)
-        if tokenResponse[0]["codigo"] == 200:
-            for token in tokenResponse[0]["datos"]:
+
+        # Si tokenResponse es una tupla, accede a sus elementos
+        if isinstance(tokenResponse, tuple):
+            tokenResponse, codigo = tokenResponse
+        else:
+            raise Exception("Respuesta inesperada de getLogin.")
+
+        if tokenResponse.get("codigo") == 200:
+            for token in tokenResponse.get("datos", []):
                 return token
         else:
-           raise Exception("No se encontró un token vigente.")
-           return None
+            raise Exception("No se encontró un token vigente.")
+            return None
 
     except Exception as e:
         logging.error(f"Error al obtener el token: {str(e)}")

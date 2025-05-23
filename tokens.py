@@ -55,7 +55,8 @@ class Tokens():
                     rows = cursor.fetchone()
             elif self.plataforma == 2:
                 with db.conn.cursor() as cursor:
-                    query = "SELECT uid, token, sign, source, destination, testSN FROM afipws_fe_wsaa_TA WHERE operador_codigo = "+str(id_usuario)+" AND  TestSN = '"+str(homo)+"' and activo = 'S' AND expTime >= NOW()"
+                    query = "SELECT uid, token, sign, source, destination, testSN FROM afipws_fe_wsaa_TA WHERE operador_codigo = '"+str(id_usuario)+"' AND  TestSN = '"+str(homo)+"' and activo = 'S' AND expTime >= NOW()"
+                    print(query)
                     cursor.execute(query)
                     rows = cursor.fetchone()
             else:

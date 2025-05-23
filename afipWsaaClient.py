@@ -247,3 +247,10 @@ class AfipWsaaClient:
         service_tag.text = service
 
         return ET.tostring(login_ticket_request).decode("utf-8")
+
+
+
+
+
+
+    

@@ -1,2 +1,38 @@
 DOCUMENTACION OFICIAL
 https://arca.gob.ar/ws/documentacion/manuales/manual-desarrollador-ARCA-COMPG-v4-0.pdf
+
+
+CONSIDERACIONES
+1) Crear tabla de errores en la base de datos de facturacion = "afipws_fe_errores_log"
+2) Agregar a la tabla existente "afipws_fe_log" un campo "resultado" varchar de 5 para
+poder guardar el tipo de log que se graba "E =Error,A=AUTORIZADOS, U=Ultimo numero de comprobante AFIP"
+
+# CREAR TABLAS NUEVAS EN SYBASE PARA MANEJO DE ERRORES GENERALES
+CREATE TABLE "DBA"."afipws_fe_errores_log" (
+	"metodoAfip" numeric(3,0) NOT NULL,
+	"FechayHora" "datetime" NOT NULL DEFAULT current timestamp,
+	"mensaje" "text" NULL,
+	"codigoError" decimal(5,0) NULL,
+	"idError" integer NOT NULL DEFAULT autoincrement,
+	PRIMARY KEY ( "idError" )
+);
+
+
+# Crear en la tabla de errores, puntuales un id autoincremental para poder guardar el detalle de los errores
+CREATE TABLE "DBA"."afipws_fe_log" (
+	"CbteTipo" numeric(3,0) NOT NULL,
+	"PtoVta" numeric(4,0) NOT NULL,
+	"CbteDesde" numeric(12,0) NOT NULL,
+	"FechayHora" "datetime" NOT NULL DEFAULT current timestamp,
+	"mensaje" "text" NULL,
+	"CbteHasta" numeric(12,0) NOT NULL,
+	"tipo_comp" numeric(3,0) NULL,
+	"pto_autorizado" numeric(4,0) NULL,
+	"v_numero_comprobante" numeric(16,0) NULL,
+	"resultado" "VARCHAR" (5) NULL,
+	"id" bigint NOT NULL DEFAULT autoincrement,
+	PRIMARY KEY ( "CbteTipo", "PtoVta", "CbteDesde", "FechayHora", "CbteHasta", "id" )
+);
+COMMENT ON COLUMN "DBA"."afipws_fe_log"."tipo_comp" IS 'Tipo de comprobante';
+COMMENT ON COLUMN "DBA"."afipws_fe_log"."pto_autorizado" IS 'Punto de venta';
+
