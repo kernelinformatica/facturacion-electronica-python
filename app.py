@@ -35,72 +35,27 @@ if __name__ == "__main__":
                 "cbteTipo": 1,
                 "cbteNro": 1,
                 "cbtePtoVta": 1,
-                "cbteFch": "2025-05-23",
+                "cbteFch": "2025-05-28",
             }
+
+
             parametros = {
                 "idFactCab": 2814,
                 "idFactCabRelacionado":0,
-                "id_usuario": 63,
-
+                "cbtePtoVta" : 1,
+                "cbteTipo" :1,
+                "cbteFch": "2025-05-28",
             }
 
-            comprobante = {
-            "FeCabReq": {
-                "CantReg": 1,
-                "PtoVta": 1,
-                "CbteTipo": 6
-            },
-            "FeDetReq": {
-                "Concepto": 1,
-                "DocTipo": 96,
-                "DocNro": 12345678,
-                "CbteDesde": 1,
-                "CbteHasta": 1,
-                "CbteFch": "20250519",
-                "ImpTotal": 121.0,
-                "ImpTotConc": 0.0,
-                "ImpNeto": 100.0,
-                "ImpOpEx": 0.0,
-                "ImpTrib": 7.8,
-                "ImpIVA": 21.0,
-                "MonId": "PES",
-                "MonCotiz": 1.0,
-                "CanMisMonExt": "",
-                "FchServDesde": "",
-                "FchServHasta": "",
-                "CondicionIVAReceptorId": 4,
-                "FchVtoPago": "20250610",
-                "Tributos": [
-                    {
-                        "Id": 99,
-                        "Desc": "Impuesto Municipal",
-                        "BaseImp": 150.0,
-                        "Alic": 5.2,
-                        "Importe": 7.8
-                    }
-                ],
-                "Iva": [
-                    {
-                        "Id": 5,
-                        "BaseImp": 100.0,
-                        "Importe": 21.0
-                    }
-                ],
-                "CbtesAsoc": None,
-                "Opcionales": None,
-                "Compradores": None,
-                "PeriodoAsoc": None,
-                "Actividades": None
-            }
-        }
+            # Convertir el string JSON en un diccionario Python
 
 
 
             try:
                 # = autorizarComprobante("DBA", parametrosSybase)
                 #logging.info(f"result: {autorizarSybase}")
-                id_usu =parametros["id_usuario"]
-                autorizar = autorizarComprobante(id_usu, parametros)
+
+                autorizar = autorizarComprobante(63, parametros)
                 #logging.info(f"result: {autorizar}")
 
                 #consultarUltimoAutorizado = consultarUltimoCbteAutorizado(62, 2, 1)

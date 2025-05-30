@@ -305,18 +305,14 @@ class Afip():
 
 
 
-    def autorizarComprobante(self, id_usuario, comprobante=None):
+    def autorizarComprobante(self, id_usuario, parametros=None):
 
-        """
-        Antes que todo me fijo si la petición viene del sistema web de facturación
-        o del sistema sybase de facturacion
-        """
         if self.plataforma == 1:
-            comprobante =self.traerComprobante(comprobante)
+            comprobante =self.traerComprobante(id_usuario, parametros)
 
         elif self.plataforma == 2:
             # en comprobante va a venir el nro de comrpbaonte
-            comprobante = self.traerComprobanteSybase(id_usuario, comprobante)
+            comprobante = self.traerComprobanteSybase(id_usuario, parametros)
             if comprobante is None:
                 logging.error("❌ El comprobante a autorizar no pudo ser detectado")
                 self.grabarRespuestaARCA(2, id_usuario, 400, "FECAESolicitar", "El comprobante a autorizar no pudo ser detectado")
@@ -905,209 +901,185 @@ class Afip():
 
 
     def traerComprobante(self, id_usuario, comprobante=None):
-
-
-
+        fechaTemp = str(comprobante["cbteFch"])
+        fecha = datetime.strptime(fechaTemp, "%Y-%m-%d").strftime("%Y%m%d")
         nro_comprobante = comprobante["idFactCab"]
         nro_comprobante_asoc = comprobante["idFactCabRelacionado"]
+        pto_venta = comprobante["cbtePtoVta"]
+        tipo_comprobante = comprobante["cbteTipo"]
+
+        if nro_comprobante is None:
+            logging.error("Error: 'Número de Comprobante' no tiene un valor válido.")
+        if id_usuario is None:
+            logging.error("Error: 'Usuario' no tiene un valor válido.")
+        if nro_comprobante is None:
+            logging.error("Error: 'Nro de Comprobante' no tiene un valor válido.")
+        if pto_venta is None:
+            logging.error("Error: 'Punto de venta' no tiene un valor válido.")
+        if tipo_comprobante is None:
+            logging.error("Error: 'Tipo de comprobante' no tiene un valor válido.")
+
+        # Traigo la cabecera por idFactCab
+
+        logging.info(":: TRAER COMPROBANTE ::")
+
+
+
 
         conn = ConectorManagerDB(1)
         cursor = conn.get_connection().conn.cursor()
-        query = "SELECT idCteTipo, letra, codigoAfip, numero, fechaEmision, fechaVto, fechaConta, codBarra, idPadron, idProductoCanje, precioReferenciaCanje, interesCanje, idMoneda, nombre, cuit, sitIVA, codigoPostal,idListaPrecios,  cotDolar, fechaDolar, Observaciones, idSisTipoOperacion, idVendedor, idSisOperacionComprobantes,  domicilio, idDepositoDestino, idRelacionCanje, kilosCanje, idCteNumerador, pesificado, dolarizadoAlVto, interesMensualCompra canjeInsumos, tipoCambio, estadoCerealSisa, porcentajePercep2459, cerealCanje, diferidoVto, interesMensualPesificado, marcaPesificado FROM FactCab WHERE idFactCab = %s"
+        query = """SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, ImpOpEx, 
+                   ImpTotal, ImpNeto, ImpTrib, ImpIva, FchServDesde, FchServHasta, 
+                   FchVtoPago, MonId, cotDolar, numeroAfip, cai 
+                   FROM v_afipws_fe_master WHERE idFactCab = %s"""
         cursor.execute(query, (nro_comprobante,))
-        resultado = cursor.fetchone()
-        if resultado:
-            id_cte_tipo = resultado[0]
-            letra = resultado[1]
-            codigo_afip = resultado[2]
-            numero = resultado[3]
-            fecha_emision = resultado[4]
-            fecha_vto = resultado[5]
-            fecha_conta = resultado[6]
-            cod_barra = resultado[7]
-            id_padron = resultado[8]
-            id_producto_canje = resultado[9]
-            precio_referencia_canje = resultado[10]
-            interes_canje = resultado[11]
-            id_moneda = resultado[12]
-            nombre = resultado[13]
-            cuit = resultado[14]
-            sit_iva = resultado[15]
-            codigo_postal = resultado[16]
-            id_lista_precios = resultado[17]
-            cot_dolar = resultado[18]
-            fecha_dolar = resultado[19]
-            observaciones = resultado[20]
-            id_sis_tipo_operacion = resultado[21]
-            id_vendedor = resultado[22]
-            id_sis_operacion_comprobantes = resultado[23]
-            domicilio = resultado[24]
-            id_deposito_destino = resultado[25]
-            id_relacion_canje = resultado[26]
-            kilos_canje = resultado[27]
-            id_cte_numerador = resultado[28]
-            pesificado = resultado[29]
-            dolarizado_al_vto = resultado[30]
-            interes_mensual_compra_canje_insumos = resultado[31]
-            tipo_cambio = resultado[32]
-            estado_cereal_sisa = resultado[33]
-            porcentaje_percep_2459 = resultado[34]
-            cereal_canje = resultado[35]
-            diferido_vto = resultado[36]
-            interes_mensual_pesificado = resultado[37]
-            marca_pesificado = resultado[38]
+        resu = cursor.fetchone()  # Solo obtener una fila
 
-            # Mostrar los datos
-            print(f"Letra: {letra}, Número: {numero}, Fecha de emisión: {fecha_emision}")
-            print(f"Nombre: {nombre}, CUIT: {cuit}, Código postal: {codigo_postal}")
-            print(f"Observaciones: {observaciones}, Tipo de cambio: {tipo_cambio}, Pesificado: {pesificado}")
-        else:
-            print(f"No se encontró el comprobante con id {nro_comprobante}")
+        # Definir los nombres de las columnas en el mismo orden que en el SELECT
+        columnasDet = ["Concepto", "DocTipo", "DocNro", "CbteDesde", "CbteHasta", "ImpOpEx",
+                       "ImpTotal", "ImpNeto", "ImpTrib", "ImpIva", "FchServDesde", "FchServHasta",
+                       "FchVtoPago", "MonId", "cotDolar", "NumeroAfip", "Cai"]
 
-
-
-        # leo la cabecera por idFactCab
-
-        fechaTemp = str(comprobante["cbteFch"])
-        fecha = datetime.strptime(fechaTemp, "%Y-%m-%d").strftime("%Y%m%d")
-
-        tipo_comprobante = 0
-        fechaTemp = str(comprobante["cbteFch"])
-
-        # Verificar valores nulos
-
-
-
-        datos_cabecera = ""
-        datos_detalle = ""
-        """
-        query = ("SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, REPLACE(CbteFch, '-', '') AS CbteFch,  ImpTotal, ImpTotConc, ImpNeto, ImpOpEx, "
-                "ImpTrib, ImpIVA, REPLACE(FchServDesde, '-', '') AS FchServDesde, REPLACE(FchServHasta, '-', '') AS FchServHasta, REPLACE(FchVtoPago, '-', '') AS FchVtoPago, MonId, MonCotiz, v_numero_comprobante"
-                " FROM  afipws_fe_master WHERE CbteDesde = " + str(nro_comprobante) +
-                " AND CbteTipo = " + str(tipo_comprobante) +
-                " AND PtoVta = " + str(pto_venta) +
-                "AND Resultado <> 'A' " +
-                "AND REPLACE(CbteFch, '-', '') = '" + str(fecha) + "'"
-        )
-        # AGREGAR AL QUERY --> and Resultado <> A LUEGO
-        cursor.execute(query)
-        resultado = cursor.fetchall()[0]
+        # Convertir la tupla en un diccionario usando zip correctamente
+        resultado = dict(zip(columnasDet, resu))
         tieneIva = "N"
-        tieneTributos ="N"
+        tieneTributos = "N"
+        docTipoDocu = resultado["DocTipo"]
         iva = []
         tributos_items = []
-        if resultado[11] > 0:
-            tieneIva = "S"
-        if resultado[10] > 0:
+        if resultado["ImpTrib"] > 0:
             tieneTributos = "S"
+        if resultado["ImpIva"] > 0:
+            tieneIva = "S"
 
 
-        columnasDet = [
-            "Concepto", "DocTipo", "DocNro", "CbteDesde", "CbteHasta", "CbteFch", "ImpTotal", "ImpTotConc", "ImpNeto",
-            "ImpOpEx", "ImpTrib", "ImpIVA", "FchServDesde", "FchServHasta", "FchVtoPago", "MonId", "MonCotiz",
-            "NumeroComprobanteArca"
-        ]
+
+
+        if docTipoDocu == 0:
+            # Debo buscar el tipo de documento en elpadron por cuit
+            print("Debo buscar el tipo de documento en elpadron por cuit")
+            query = ("SELECT cuit,  CASE WHEN LENGTH(cuit) = 11 THEN 80 ELSE 96  END AS codigo_documento FROM PadronGral where cuit = %s;")
+            cursor.execute(query,  (resultado["DocNro"],))
+            resu_tipodoc = cursor.fetchone()
+            if resu_tipodoc:
+                resultado["DocTipo"] =  resu_tipodoc[1]
+                print("Código de documento encontrado " + str(resultado["DocTipo"]))
+            else:
+                print("No se encontró el tipo de documento para el CUIT proporcionado.")
+
 
         # IVA
         if tieneIva == "S":
-            queryIva = (
-                    "SELECT TipoDetalle, Pase, Id, AsocPtoVta, AsocNroCbte, Valor, BaseImp, Alic, importe, descriTributo "
-                    "FROM afipws_fe_detalle WHERE CbteDesde = " + str(nro_comprobante) +
-                    " AND CbteTipo = " + str(tipo_comprobante) +
-                    " AND PtoVta = " + str(pto_venta) +
-                    " AND id > 1"
-            )
-            cursor.execute(queryIva)
+            queryIva = ("SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId "
+                        "FROM FactPie, AfipWsTiposIva WHERE idFactCab = %s AND idSisTipoModelo = 2 "
+                        "AND AfipWsTiposIva.alicuota = FactPie.porcentaje")
+            cursor.execute(queryIva, (nro_comprobante,))
             resultadoIva = cursor.fetchall()
+            if not resultadoIva:
+                print("⚠ No se encontraron datos de IVA.")
 
-            for item in resultadoIva:
-                iva_item = {
-                    "Id": int(item[2]),  # Convertir Id a entero
-                    "BaseImp": float(item[6]),  # Convertir BaseImponible a flotante
-                    "Importe": float(item[8])  # Convertir Importe a flotante
-                }
-                iva.append(iva_item)
+            else:
+                for item in resultadoIva:
+                    iva_item = {
+                        "Id": int(item[4]) if item[4] is not None else 0,
+                        "BaseImp": float(item[3]) if item[3] is not None else 0.0,
+                        "Importe": float(item[2]) if item[2] is not None else 0.0
+                    }
 
+                    iva.append(iva_item)
+            print("-- Iva: "" ------------------------------------------------------")
+            print(json.dumps(iva, indent=4))
+
+        # TRIBUTOS
 
         if tieneTributos == "S":
-            queryTributos = (
-                    "SELECT TipoDetalle, Pase, Id, AsocPtoVta, AsocNroCbte, Valor, BaseImp, Alic, importe, descriTributo "
-                    "FROM afipws_fe_detalle WHERE CbteDesde = " + str(nro_comprobante) +
-                    " AND CbteTipo = " + str(tipo_comprobante) +
-                    " AND PtoVta = " + str(pto_venta) +
-                    " AND id = 1"
-            )
-            cursor.execute(queryTributos)
-            resultadoTributos = cursor.fetchall()
 
-            for item in resultadoTributos:
-                tributo_item = {
-                    "Id": int(item[2]),
-                    "Desc": str(item[9]),
-                    "BaseImp": float(item[6]),
-                    "Alic": float(item[7]),
-                    "Importe": float(item[8]),
-                }
-                tributos_items.append(tributo_item)
+            queryTributos = (
+                "SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId FROM FactPie, AfipWsTiposIva WHERE idFactCab = %s AND idSisTipoModelo <> 2 AND AfipWsTiposIva.alicuota = FactPie.porcentaje")
+            cursor.execute(queryTributos, (nro_comprobante,))
+            resultadoTributos = cursor.fetchall()
+            if not resultadoTributos:
+                print("⚠ No se encontraron datos de tributos.")
+            else:
+                for item in resultadoTributos:
+                    tributo_item = {
+                        "Id": int(item[4]) if item[4] is not None else 0,
+                        "Desc": str(item[0]),
+                        "BaseImp": float(item[3]) if item[3] is not None else 0.0,
+                        "Alic": float(item[1]) if item[1] is not None else 0.0,
+                        "Importe": float(item[2]) if item[2] is not None else 0.0,
+                    }
+                    tributos_items.append(tributo_item)
+                print(json.dumps(tributos_items, indent=4))  # Imprimir la lista completa
+
 
         # CBTES ASOCIADOS
-        if  resultado[17] == None:
-            numeroComprobanteArca = 0
-        else:
-            numeroComprobanteArca = resultado[17]
-        queryAsoc = (
-                "SELECT * FROM afipws_fe_CbtesAsociados WHERE CTipoAsoc = " + str(tipo_comprobante) +
-                " AND PVtaAsoc = " + str(pto_venta) +
-                " AND CNroAsoc = " + str(numeroComprobanteArca) +
-                " AND CbteNro = " + str(nro_comprobante)
-        )
-        cursor.execute(queryAsoc)
-        resultadoAsoc = cursor.fetchall()
+        if nro_comprobante_asoc > 0 :
+            if  resultado[14] == None:
+                numeroComprobanteArca = 0
+                caiArca = ""
+            else:
+                numeroComprobanteArca = resultado[14]
+                caiArca = str(resultado[15])
+            # nro_comprobante = este numero en esta parte quiza sea el nro electronico ver si anda asi
+            query = "SELECT numeroAfip, cai, idCteTipo, letra FROM v_afipws_fe_master  WHERE idFactCab = %s"
+            cursor.execute(query, (nro_comprobante_asoc,))
+            resultado_asoc = cursor.fetchall()[0]
+            cursor.execute(resultado_asoc)
+            resultadoAsoc = cursor.fetchall()
+            numeroArcaAsoc = resultadoAsoc[0]
+            caiAsoc = resultadoAsoc[1]
+            idCteTipoAsoc = resultadoAsoc[2]
+            idLetraAsoc = resultadoAsoc[3]
+            # Busco el tipo de comprobante afip en idSisCodigoAfip
+            query = "SELECT idCteTipoSisLetra, idSisCodigoAfip FROM CteTipoSisLetras WHERE idCteTipo = %s AND idSisLetra = %s"
+            cursor.execute(query, (resultadoAsoc, idLetraAsoc))
+            resultado_asoc_arca = cursor.fetchall()[0]
+            cursor.execute(resultado_asoc_arca)
+            resultadoAsoc_arca = cursor.fetchall()
+            idSisLetra = resultadoAsoc_arca[0]
+            tipoCompAsoc = resultadoAsoc_arca[1]
 
-        # Construcción del JSON de comprobantes asociados
-        cbtes_asoc = []
-        for item in resultadoAsoc:
-            cbte_item = {
-                "CTipoAsoc": int(item[0]),  # Tipo de comprobante asociado
-                "PVtaAsoc": int(item[1]),  # Punto de venta asociado
-                "CNroAsoc": int(item[2]),  # Número comprobante asociado
-                "CbteNro": int(item[3])  # Número de comprobante
-            }
-            cbtes_asoc.append(cbte_item)
+            # busco el punto de venta asociado
+            query = ("SELECT ptoVenta FROM CteNumerador, PtoVenta WHERE "
+                     "CteNumerador.idPtoVenta= PtoVenta.idPtoVenta AND "
+                     "CteNumerador.idCteTipoSisLetra  = %s")
+            cursor.execute(query, (idSisLetra,))
+            resultado_asoc_pto = cursor.fetchall()[0]
+            ptoVentaAsoc= resultado_asoc_pto[0]
+            cbtes_asoc = []
 
-        # Opcionales
-        queryOpcionales = (
-                "SELECT Id, Valor FROM afipws_fe_Opcionales WHERE CbteNro = " + str(nro_comprobante) +
-                " AND PtoVta = " + str(pto_venta)
-        )
-        cursor.execute(queryOpcionales)
-        resultadoOpcionales = cursor.fetchall()
-        opcionales = []
-        for item in resultadoOpcionales:
-            opcional_item = {
-                "Id": str(item[0]),  # ID del opcional (convertido a string)
-                "Valor": str(item[1])  # Valor asociado al opcional
-            }
-            opcionales.append(opcional_item)
+            for item in resultadoAsoc:
+                cbte_item = {
+                    "CTipoAsoc": int(tipoCompAsoc),  # Tipo de comprobante asociado
+                    "PVtaAsoc": int(ptoVentaAsoc[1]),  # Punto de venta asociado
+                    "CNroAsoc": int(numeroArcaAsoc),  # Número comprobante asociado
+                    "CbteNro": int(nro_comprobante)  # Número de comprobante
+                }
+                cbtes_asoc.append(cbte_item)
 
-        # Periodos asociados
-        queryPeriodoAsoc = (
-                "SELECT REPLACE(fechadesde,'-', ''), REPLACE(fechahasta, '-', '') FROM afipws_fe_CbtesAsociados_periodo WHERE CbteNro = " + str(
-            nro_comprobante) +
-                " AND CbteTipo = " + str(tipo_comprobante) +
-                " AND PtoVta = " + str(pto_venta)
-        )
-        cursor.execute(queryPeriodoAsoc)
-        resultadoPeriodoAsoc = cursor.fetchall()
 
-        # Construcción del JSON de PeriodoAsoc
-        periodo_asoc = []
-        for item in resultadoPeriodoAsoc:
-            periodo_item = {
-                "FchDesde": str(item[0]),
-                "FchHasta": str(item[1])
-            }
-            periodo_asoc.append(periodo_item)
+        # OPCIONALES
+
+        """
+        
+        
+        ........
+        
+        
+        
+        """
+
+        # PERIODOS ASOCIADOS
+
+        """
+        
+        
+        
+        ---------------------
+        
+        
+        """
 
         # Convertir los datos en un diccionario
         datos_cabecera = {
@@ -1120,11 +1092,15 @@ class Afip():
             columnasDet: (str(valor) if isinstance(valor, (Decimal, date)) else valor)
             for columnasDet, valor in zip(columnasDet, resultado)
         }
-        if datos_master["DocTipo"] == str(80):
-            cuit =  datos_master["DocNro"]
-            query_iva_con = ("SELECT v_condicion_iva FROM fac_ventas where v_numero_comprobante = "+str(nro_comprobante)+" and "
-             "pto_numero = "+str(pto_venta)+" and v_tipo_comprobante = "+str(tipo_comprobante)+" and REPLACE(v_fecha_operacion, '-', '') = '"+str(fecha)+"' and v_codigo = 'CIERRE'")
-            print(query_iva_con)
+
+        if resultado["DocTipo"] == 80:
+            cuit = datos_master["DocNro"]
+            query_iva_con = ("SELECT v_condicion_iva FROM fac_ventas where v_numero_comprobante = " + str(
+                nro_comprobante) + " and "
+                                   "pto_numero = " + str(pto_venta) + " and v_tipo_comprobante = " + str(
+                tipo_comprobante) + " and REPLACE(v_fecha_operacion, '-', '') = '" + str(
+                fecha) + "' and v_codigo = 'CIERRE'")
+
             cursor.execute(query_iva_con)
             conIvaRecept = cursor.fetchone()
             if conIvaRecept is None:
@@ -1142,6 +1118,7 @@ class Afip():
             datos_master["CbtesAsoc"] = {"CbteAsoc": cbtes_asoc}
         else:
             datos_master["CbtesAsoc"] = None
+        """
         if opcionales:
             datos_master["Opcionales"] = {"Opcional": opcionales}
         else:
@@ -1149,20 +1126,35 @@ class Afip():
 
         if periodo_asoc:
             datos_master["PeriodoAsoc"] = periodo_asoc
+        
         else:
             datos_master["PeriodoAsoc"] = None
+        """
         if tributos_items:
             datos_master["Tributos"] = {"Tributo": tributos_items}
         else:
             datos_master["Tributos"] = None
 
         datos_master["CondicionIVAReceptorId"] = int(condicionIVAReceptorId)
-        """
         json_unificado = json.dumps({
             "FeCabReq": datos_cabecera,
             "FeDetReq": datos_master
         }, indent=4, ensure_ascii=False)
         return json_unificado
+
+
+
+
+        return ("RESPUESTA TEMPORAL: ESTAMOS DESARROLANDO ....")
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1186,6 +1178,8 @@ class Afip():
         if fecha is None:
             logging.error("Error: 'Fecha del Comprobante' no tiene un valor válido.")
 
+
+
         query = ("SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, REPLACE(CbteFch, '-', '') AS CbteFch,  ImpTotal, ImpTotConc, ImpNeto, ImpOpEx, "
                 "ImpTrib, ImpIVA, REPLACE(FchServDesde, '-', '') AS FchServDesde, REPLACE(FchServHasta, '-', '') AS FchServHasta, REPLACE(FchVtoPago, '-', '') AS FchVtoPago, MonId, MonCotiz, v_numero_comprobante"
                 " FROM  afipws_fe_master WHERE CbteDesde = " + str(nro_comprobante) +
@@ -1254,6 +1248,9 @@ class Afip():
                     "Importe": float(item[8]),
                 }
                 tributos_items.append(tributo_item)
+
+
+
 
         # CBTES ASOCIADOS
         if  resultado[17] == None:
@@ -1367,6 +1364,14 @@ class Afip():
             "FeDetReq": datos_master
         }, indent=4, ensure_ascii=False)
         return json_unificado
+
+
+
+
+
+
+
+
 
 
 

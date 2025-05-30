@@ -11,21 +11,22 @@ wsfe_instance = wsfe()
 
 # **🔹 Autorizar factura electrónica**
 @facturacion_bp.route('/autorizarComprobante', methods=['POST'])
-def autorizarComprobante(id_usuario=0, comprobante=None):
-    try:
+def autorizarComprobante(id_usuario=0, parametros=None):
 
+
+    try:
         if id_usuario == 0:
             logging.error(f"❌ ID de usuario no proporcionado")
             return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
 
-        if comprobante == "" or comprobante is None:
+        if parametros == "" or parametros is None:
             logging.error(f"❌ El comprobante a autorizar no pudo ser detectado")
             return jsonify({"control": "ERROR", "mensaje": "El comprobante a autorizar no pudo ser detectado"}), 400
 
 
 
         # Procesar la factura
-        resultado = wsfe_instance.autorizarComprobante(id_usuario, comprobante)
+        resultado = wsfe_instance.autorizarComprobante(id_usuario, parametros)
         return resultado
     except Exception as e:
         logging.error(f"Error en autorizar el comprobante: {e}")
