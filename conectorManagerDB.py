@@ -15,3 +15,18 @@ class ConectorManagerDB:
             raise ValueError("Plataforma no soportada")
         return self.connection
 
+
+"""
+ conn = ConectorManagerDB(1)
+cursor = conn.get_connection().conn.cursor()
+sql_libro =  SELECT valor from Parametros where  Parametros.grupo = 'contable' and Parametros.nombreParametro = 'codigo_libro_sybase';  
+print(sql_libro)
+cursor.execute(sql_libro,)
+lib = cursor.fetchone()
+if lib:
+    print(f"Valor del libro: {lib[0]}")
+ """
+
+
+
+

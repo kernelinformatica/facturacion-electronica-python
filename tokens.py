@@ -56,7 +56,6 @@ class Tokens():
             elif self.plataforma == 2:
                 with db.conn.cursor() as cursor:
                     query = "SELECT uid, token, sign, source, destination, testSN FROM afipws_fe_wsaa_TA WHERE operador_codigo = '"+str(id_usuario)+"' AND  TestSN = '"+str(homo)+"' and activo = 'S' AND expTime >= NOW()"
-                    print(query)
                     cursor.execute(query)
                     rows = cursor.fetchone()
             else:
@@ -107,7 +106,7 @@ class Tokens():
 
     def grabarToken(self, id_usuario, source, destination, uniqueId, generationTime, expirationTime, token, sign):
         """🔹 Graba el token y sign en la tabla AfipWsaaTa."""
-        print("::: Graba el token y sign en la tabla AfipWsaaTa. :::")
+        logging.info("::: Graba el token y sign en la tabla AfipWsaaTa. :::")
         try:
             # Crear una instancia de la conexión a la base de datos
             plataforma = self.plataforma

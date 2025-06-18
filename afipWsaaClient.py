@@ -1,5 +1,6 @@
 import base64
 import os
+import json
 from datetime import datetime, timedelta
 import xml.etree.ElementTree as ET
 from xmlrpc.client import Fault
@@ -85,7 +86,12 @@ class AfipWsaaClient:
             ticket_obj = AfipWsaaClient.cargar_certificado_final(certificate, keyStore, wsdl_url)
             return ticket_obj
         except Exception as e:
-            print(f"create_cms() Error al obtener el ticket : {e}")
+            logging.error(json.dumps({"control": "ERROR", "codigo": "400", "mensaje": str(e.strerror)}))
+            return json.dumps({"control": "ERROR", "codigo": "400", "mensaje": str(e.strerror)})
+            raise Exception({"control": "ERROR", "codigo": "400", "mensaje": str(e.strerror)})
+
+
+
 
 
 
@@ -93,9 +99,23 @@ class AfipWsaaClient:
 
 
     def cargar_certificado_final(certificate, private_key,wsdl_url):
+        print(f"Ruta del certificado: {os.path.abspath(certificate)}")
+        print(f"Ruta de la clave privada: {os.path.abspath(private_key)}")
+
+        certificate2 = r"H:\Dario\Proyectos\Python\kernel\ws-rest\facturacion-electronica\afip\certificado\homo\dQuiroga25.crt"
+        private_key2 = r"H:\Dario\Proyectos\Python\kernel\ws-rest\facturacion-electronica\afip\certificado\homo\dQuiroga25.key"
+
+        print(f"Certificado existe: {os.path.exists(certificate2)}")
+        print(f"Clave privada existe: {os.path.exists(private_key2)}")
+
+        print(f"Permisos de lectura Certificado: {os.access(certificate2, os.R_OK)}")
+        print(f"Permisos de lectura Clave privada: {os.access(private_key2, os.R_OK)}")
+
         if not os.path.exists(certificate):
+            logging.error(f"El archivo de certificado no existe: {certificate}")
             raise FileNotFoundError(f"El archivo de certificado no existe: {certificate}")
         if not os.path.exists(private_key):
+            logging.error(f"El archivo de clave privada no existe: {private_key}")
             raise FileNotFoundError(f"El archivo de clave privada no existe: {private_key}")
 
         servicio_id = "wsfe"

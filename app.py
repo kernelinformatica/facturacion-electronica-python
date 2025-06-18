@@ -33,18 +33,20 @@ if __name__ == "__main__":
         with facturacionApp.app.test_request_context():  # 🔹 Simula un request con headers
             parametrosSybase = {
                 "cbteTipo": 1,
-                "cbteNro": 1,
-                "cbtePtoVta": 1,
-                "cbteFch": "2025-05-28",
+                "cbteNro": 313,
+                "cbtePtoVta": 38,
+                "cbteFch": "2025-05-30",
             }
 
-
+            # idFactCab = 2829 , es la factura que se autorizo
+            # idFactCab = 2830, es la nota de credito con la cual se debe anular la factura (2829
             parametros = {
-                "idFactCab": 2814,
-                "idFactCabRelacionado":0,
+                "idFactCab": 2830,
+                "idFactCabRelacionado":2829,
                 "cbtePtoVta" : 1,
-                "cbteTipo" :1,
-                "cbteFch": "2025-05-28",
+                "cbteTipo" : 3,
+                "cbteFch": "2025-06-18",
+
             }
 
             # Convertir el string JSON en un diccionario Python
@@ -52,13 +54,18 @@ if __name__ == "__main__":
 
 
             try:
-                # = autorizarComprobante("DBA", parametrosSybase)
+                #autorizarComprobante(62, parametros)
                 #logging.info(f"result: {autorizarSybase}")
 
-                autorizar = autorizarComprobante(63, parametros)
+                #autorizar = autorizarComprobante(63, parametros)
                 #logging.info(f"result: {autorizar}")
+                comprobanteConsulta = {
+                    "CbteTipo": 3,
+                    "CbteNro": 1,
+                    "PtoVta": 1,
+                }
 
-                #consultarUltimoAutorizado = consultarUltimoCbteAutorizado(62, 2, 1)
+                consultarComprobante = consultarComprobanteEmitido(62, comprobanteConsulta)
                 #logging.info(f"result: {consultarUltimoAutorizado}")
             except Exception as e:
                 logging.error(f"Error general: {e}")

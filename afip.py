@@ -10,7 +10,7 @@ from idlelib import history
 
 from requests import Session
 from SSLAdapter import SSLAdapter
-
+from utilidades import Utilidades as utils
 from zeep.helpers import serialize_object
 from requests.adapters import HTTPAdapter
 from conectorManagerDB import ConectorManagerDB
@@ -27,8 +27,8 @@ ssl_context = ssl.create_default_context()
 ssl_context.set_ciphers("DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
 
 # Configurar el registro de depuración
-#logging.basicConfig(level=logging.DEBUG)
-#logging.getLogger("zeep").setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("zeep").setLevel(logging.DEBUG)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -65,35 +65,59 @@ class Afip():
         self.testSn = os.getenv("WS_TEST", "True")
 
         #
-    def login(self, id_usuario):
-        logging.info("----------> :: app: login() Autentica con AFIP utilizando los certificados :: <----------")
+
+    import json
+
+    def login(self, id_usuario=0):
+        logging.info("----------> :: app: login("+str(id_usuario)+") Autentica con AFIP utilizando los certificados :: <----------")
 
         try:
-            # 🔹 Crear el NUEVO TA
+            # 🔹 Obtener el nuevo Token de Acceso
             cms = afipClient.obtenerNuevoTokenAcceso(self.trust_store, self.keystore, self.endpoint_login)
-            root = ET.fromstring(cms)
-            if not cms:
-                if "control" in cms and "mensaje" in cms:
-                    return cms["mensaje"]
-            else:
-                # Header #
-                source = root.find(".//source").text if root.find(".//source") is not None else "N/A"
-                destination = root.find(".//destination").text if root.find(".//destination") is not None else "N/A"
-                uniqueId = root.find(".//uniqueId").text if root.find(".//uniqueId") is not None else "N/A"
-                generationTime = root.find(".//generationTime").text if root.find(
-                    ".//generationTime") is not None else "N/A"
-                expirationTime = root.find(".//expirationTime").text if root.find(
-                    ".//expirationTime") is not None else "N/A"
 
-                # Credenciales #
-                token = root.find(".//token").text if root.find(".//token") is not None else "N/A"
-                sign = root.find(".//sign").text if root.find(".//sign") is not None else "N/A"
-                tok.grabarToken(self, id_usuario, source, destination, uniqueId, generationTime, expirationTime, token, sign)
+            try:
+                # 🔹 Si la respuesta es un diccionario, devolverlo en formato JSON
+                if isinstance(cms, dict):
+                    logging.info(cms)
+                    return json.dumps(cms)  # Convertir el diccionario a JSON
+
+                elif isinstance(cms, requests.Response):
+                    cms = cms.text  # Si es una respuesta HTTP, extraer el contenido de texto
+
+                if not isinstance(cms, str):
+                    logging.error({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
+                    return json.dumps({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
+
+                # 🔹 Parsear el XML si es válido
+                root = ET.fromstring(cms)
+
+                # 🔹 Extraer datos del XML
+                data = {
+                    "control": "OK",
+                    "source": root.find(".//source").text if root.find(".//source") is not None else "N/A",
+                    "destination": root.find(".//destination").text if root.find(
+                        ".//destination") is not None else "N/A",
+                    "uniqueId": root.find(".//uniqueId").text if root.find(".//uniqueId") is not None else "N/A",
+                    "generationTime": root.find(".//generationTime").text if root.find(
+                        ".//generationTime") is not None else "N/A",
+                    "expirationTime": root.find(".//expirationTime").text if root.find(
+                        ".//expirationTime") is not None else "N/A",
+                    "token": root.find(".//token").text if root.find(".//token") is not None else "N/A",
+                    "sign": root.find(".//sign").text if root.find(".//sign") is not None else "N/A",
+                }
+
+                # 🔹 Guardar el token y devolver la respuesta en JSON
+                tok.grabarToken(self, id_usuario, data["source"], data["destination"], data["uniqueId"],
+                                data["generationTime"], data["expirationTime"], data["token"], data["sign"])
+                logging.info(data)
+                return json.dumps(data)  # Convertir el diccionario a JSON
+            except ET.ParseError as e:
+                logging.error("login(): "+str(e))
+
 
         except Exception as e:
-            logging.error(f"❌ Error autenticando con {self.nombre_entidad}: {str(e)}")
-            return {"control": "ERROR", "mensaje": f"Error autenticando con {self.nombre_entidad}: {str(e)}"}
-
+            #logging.error(f"❌ Error autenticando con {self.nombre_entidad}: {str(e)}")
+            return json.dumps({"control": "ERROR", "mensaje": f"Error autenticando con {self.nombre_entidad}: {str(e)}"})
 
     def consultarComprobanteEmitido(self, id_usuario=0, cbteTipo=0, cbteNro=0, cbtePtoVta=0):
         logging.info(f":: consultarComprobanteEmitido({id_usuario}) ::")
@@ -158,7 +182,7 @@ class Afip():
                     logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
                     return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
                 else:
-                    logging.info("✅ "+str(endPonintNombre)+": Solicitud enviada correctamente.")
+                    logging.info(response)
                     return response
             except Exception as e:
                 logging.error(f"❌ Error al consultar comprobante emitido: {str(e)}")
@@ -230,6 +254,7 @@ class Afip():
                 else:
                     logging.info("✅ "+str(endPonintNombre)+": Solicitud enviada correctamente.")
                     return response
+
             except Exception as e:
                 logging.error(f"❌ "+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}")
                 return {"control": "ERROR", "mensaje": f""+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}"}
@@ -308,11 +333,24 @@ class Afip():
     def autorizarComprobante(self, id_usuario, parametros=None):
 
         if self.plataforma == 1:
+            idFactCab = parametros["idFactCab"]
             comprobante =self.traerComprobante(id_usuario, parametros)
+            if comprobante is None:
+                json_resp = json.dumps({
+                        "control": "ERROR",
+                        "codigo": "400",
+                        "mensaje": "Error: no se encuentra el comprobante "+str(idFactCab)+" que intenta autorizar, consulte con el administrador del sistema."
+                }, indent=4, ensure_ascii=False)
+                logging.error(json_resp)
+                return json_resp
+
+
+
 
         elif self.plataforma == 2:
             # en comprobante va a venir el nro de comrpbaonte
             comprobante = self.traerComprobanteSybase(id_usuario, parametros)
+
             if comprobante is None:
                 logging.error("❌ El comprobante a autorizar no pudo ser detectado")
                 self.grabarRespuestaARCA(2, id_usuario, 400, "FECAESolicitar", "El comprobante a autorizar no pudo ser detectado")
@@ -333,9 +371,6 @@ class Afip():
                 punto_venta = cabecera["PtoVta"]
                 tipo_comp =  cabecera["CbteTipo"]
                 cantidad = cabecera["CantReg"]
-
-
-
                 ultimo = self.ultimoComprobanteAutorizado(id_usuario, punto_venta, tipo_comp)
                 if ultimo["CbteNro"] is None:
                     if self.plataforma == 2:
@@ -369,7 +404,8 @@ class Afip():
 
                 nroComprobanteInterno  = detalle["CbteDesde"]
                 nuevoNroComprobante = int(ultimo["CbteNro"])+1
-                 # Crear el transporte con la sesión configurada
+
+                # Crear el transporte con la sesión configurada
                 transport = Transport(session=session)
                 client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", transport=transport)
 
@@ -417,12 +453,12 @@ class Afip():
                         print("MonCotiz: " + str(detalle["MonCotiz"]))
                         print("FchServDesde: " + str(detalle["FchServDesde"]))
                         print("FchServHasta: " + str(detalle["FchServHasta"]))
+
                         print("CondicionIVAReceptorId: " + str(detalle["CondicionIVAReceptorId"]))
                         print("FchVtoPago: " + str(detalle["FchVtoPago"]))
                         print("NumeroComprobanteArca: "+ str(detalle["NumeroComprobanteArca"]))
                         print("Iva: " + str(detalle["Iva"]))
                         print("Tributos: " + str(detalle["Tributos"]))
-                        print("CbtesAsoc: " + str(detalle["CbtesAsoc"]))
                         print("Opcionales: " + str(detalle["Opcionales"]))
                         print("PeriodoAsoc: " + str(detalle["PeriodoAsoc"]))
 
@@ -433,6 +469,9 @@ class Afip():
                         if detalle["Opcionales"] is not None:
                             print("Opcionales: " + str(detalle["Opcionales"]))
                         print("::::::::::::::::::::::::::::::::::::::::::::::::::::")
+
+
+
 
                         fe_det_req = [
                             FECAEDetRequestType(
@@ -457,7 +496,7 @@ class Afip():
                                 FchVtoPago=detalle["FchVtoPago"],
                                 Tributos=detalle["Tributos"],
                                 Iva=detalle["Iva"],
-                                CbtesAsoc= detalle["Tributos"],
+                                CbtesAsoc= detalle["CbtesAsoc"],
                                 Opcionales =  detalle["Opcionales"],
                                 Compradores = None,
                                 PeriodoAsoc = detalle["PeriodoAsoc"],
@@ -475,8 +514,10 @@ class Afip():
                         # Enviar la solicitud
 
                         response = client.service.FECAESolicitar(Auth=auth, FeCAEReq=fe_cae_req)
-
-                        self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
+                        if self.plataforma == 1:
+                            self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, idFactCab)
+                        else:
+                            self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
 
                 except Exception as e:
                     return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante)
@@ -513,14 +554,18 @@ class Afip():
                             "mensaje": "Se encontraron errores en la respuesta de " + str(self.nombre_entidad) + ".",
                             "errores": [{"codigo": err["Code"], "mensaje": err["Msg"]} for err in errores]
                         }, indent=4, ensure_ascii=False)
+                        logging.error([{"codigo": err["Code"], "mensaje": err["Msg"]} for err in errores])
 
                 else:
+                    logging.error([{"codigo": err["Code"], "mensaje": err["Msg"]} for err in errores])
                     return json.dumps({
                         "control": "ERROR",
                         "codigo": "400",
                         "mensaje": "Se encontraron errores en la respuesta de " + str(self.nombre_entidad) + ".",
                         "errores": [{"codigo": err["Code"], "mensaje": err["Msg"]} for err in errores]
                     }, indent=4, ensure_ascii=False)
+
+
 
 
 
@@ -545,7 +590,7 @@ class Afip():
                         {"Code": obs.Code, "Msg": obs.Msg} for obs in
                         respuesta.FeDetResp.FECAEDetResponse[0].Observaciones.Obs
                     ]
-                    logging.error("❌ Comprobante no autorizado.")
+
                     if self.plataforma == 2:
                         self.borraErrorARCASybase(1, id_usuario, comprobante)
                         h=0
@@ -555,6 +600,8 @@ class Afip():
                             self.grabarRespuestaARCA(1, id_usuario, 400, "FECAESolicitar", msg, comprobante, "E")
                             h = h+1
                             logging.info("Ver tabla afipws_fe_log: "+msg)
+
+                    logging.error("ERROR: " + ": "+ str(observaciones))
                     return json.dumps({
                         "control": "ERROR",
                         "codigo": "400",
@@ -701,9 +748,8 @@ class Afip():
 
 
 
-    def actualizarComprobante(self, id_usuario, comprobante_original, respuesta, nro_comp_interno=0):
+    def actualizarComprobante(self, id_usuario, comprobante_original, respuesta, idFactCab=0):
         logging.info("::::: ACTUALIZAR COMPROBANTE :::::")
-
         cuit = respuesta['FeCabResp']['Cuit']
         pto_vta = respuesta['FeCabResp']['PtoVta']
         cbte_tipo = respuesta['FeCabResp']['CbteTipo']
@@ -718,7 +764,7 @@ class Afip():
         doc_nro = detalles['DocNro']
         cbte_desde = detalles['CbteDesde']
         cbte_hasta = detalles['CbteHasta']
-        cbte_numero_interno = nro_comp_interno
+        nro_comp_full = self.generar_numero_comprobante(pto_vta, cbte_desde)
         cbte_fch = detalles['CbteFch']
         cbte_fch_conv = datetime.strptime(cbte_fch, "%Y%m%d").strftime("%Y-%m-%d")
         resultado_det = detalles['Resultado']
@@ -735,20 +781,425 @@ class Afip():
         else:
             print("No hay observaciones registradas.")
 
-        # Mostrar valores extraídos
-        print(f"Cuit: {cuit}, PtoVta: {pto_vta}, CbteTipo: {cbte_tipo}")
-        print(f"Fecha Proceso: {fch_proceso}, CantReg: {cant_reg}, Resultado: {resultado}, Reproceso: {reproceso}")
-        print(f"Concepto: {concepto}, DocTipo: {doc_tipo}, DocNro: {doc_nro}")
-        print(f"CbteDesde: {cbte_desde}, CbteHasta: {cbte_hasta}, CbteFch: {cbte_fch}, Resultado: {resultado_det}")
-        print(f"CAE: {cae}, CAE Fch Vto: {cae_fch_vto}")
-        print(f"Observación Code: {observacion_code}, Observación Msg: {observacion_msg}")
+        """aca debo de verificar si esxiste la cabecera antes de atualizar"""
 
+
+        #primero verifico que la cabecera auno este autorizado
+
+        # Mostrar valores extraídos
         conn = ConectorManagerDB(1)
         cursor = conn.get_connection().conn.cursor()
-        # Debo actualizar de la cabecera 'FactCab' los campos  numeroAfip, cai, caiVto"
-        # SELECT numeroAfip, cai, caiVto FROM FactCab
+        sql_sel_fc = """SELECT COUNT(*) FROM FactCab WHERE idFactCab = %s AND cai = '' AND (numeroAfip IS NULL OR numeroAfip = 0);"""
+        cursor.execute(sql_sel_fc, (idFactCab, ))
+        row = cursor.fetchone()
+        cursor.close()
 
-        print("Actualiza tablas FacCab de facturacion nueva")
+        if row and row[0] > 0:
+
+            try:
+                conn = ConectorManagerDB(1)
+                cursor = conn.get_connection().conn.cursor()
+                sql_update = """UPDATE FactCab SET  numeroAfip = %s, cai = %s, caiVto = %s WHERE idFactCab = %s AND (cai = '' or cai IS NULL) AND (numeroAfip IS NULL OR numeroAfip = 0);"""
+                cursor.execute(sql_update, (nro_comp_full, cae, cae_fch_vto_conv, idFactCab,))
+
+
+                try:
+
+                    cursor.execute("COMMIT")
+                    cursor.close()
+                    conn.get_connection().conn.close()
+                    logging.info("✅ Commit realizado con éxito. " + str(conn.get_connection().conn))
+
+                    fac_cab_resp = {
+                        "codigo": "200",
+                        "control": "OK",
+                        "mensaje": "Actualización de la Cabecera exitosa, 1 registro(s) modificado(s), CAE otorgado: " + str(
+                            cae) + ", Nro comprobante electrónico: " + str(
+                            nro_comp_full) + ", Fecha de vencimiento del CAE: " + str(cae_fch_vto_conv)
+                    }
+
+                    logging.info(":: Actualizo la cabecera del comprobante, ahora debe hacer el pasaje a fac_ventas en sybase ::")
+                    logging.info(":: Contabilizacion a Master Sybase ::")
+                    actualizarAsientoMaster = self.actualizaMasterSybase(id_usuario, comprobante_original, respuesta, idFactCab)
+                    if actualizarAsientoMaster == False:
+                        respActualizaMaster = {
+                            "codigo": "400",
+                            "control": "ERROR",
+                            "mensaje": "Se produjo un error inesperador al actalizar la contabilidad, verifique. Numero de comprobante = "+str(comprobante_original["CbteDesde"]),
+                        }
+                    else:
+                        respActualizaMaster = {
+                            "codigo": "200",
+                            "control": "OK",
+                            "mensaje": "Contabilización a Master Sybase se realizo exitosamente, Nro comprobante electrónico: " + str(nro_comp_full) + ", CAE: " + str(cae) + ", Fecha de vencimiento del CAE: " + str(cae_fch_vto_conv)
+                        }
+                        grabarFacVentas = self.grabarFacVentasSybase(id_usuario, comprobante_original, respuesta,
+                                                                     idFactCab)
+                        if grabarFacVentas == False:
+                            respFacVentas = {
+                                "codigo": "400",
+                                "control": "ERROR",
+                                "mensaje": "Se produjo un error inesperador al hacer el pasaje a fac_ventas sybase.",
+                            }
+                        else:
+                            respFacVentas = {
+                                "codigo": "200",
+                                "control": "OK",
+                                "mensaje": "Pasaje a fac_ventas se realizo exitosamente, Nro comprobante electrónico: " + str(
+                                    nro_comp_full) + ", CAE: " + str(cae) + ", Fecha de vencimiento del CAE: " + str(
+                                    cae_fch_vto_conv)
+                            }
+
+
+                    resp = {
+                        "control": "OK",
+                        "mensaje": "Comprobante autorizado con éxito",
+                        "datos": {
+                            "Cuit": str(cuit),
+                            "PtoVta": str(pto_vta),
+                            "CbteTipo": cbte_tipo,
+                            "FechaProceso": str(fch_proceso),
+                            "CantReg": 1,
+                            "Resultado": resultado,
+                            "Reproceso": reproceso,
+                            "ResultadoDetalle": resultado_det,
+                            "Concepto": concepto,
+                            "DocTipo": doc_tipo,
+                            "DocNro": doc_nro,
+                            "CbteDesde": cbte_desde,
+                            "CbteHasta": cbte_desde,
+                            "CbteFch": "" + str(cbte_fch_conv),
+                            "CAE": cae,
+                            "CAEFchVto": str(cae_fch_vto),
+                            "Observaciones": {
+                                "Code": observacion_code,
+                                "Msg": observacion_msg
+                            }
+                        },
+                        "FactCab": fac_cab_resp,
+                        "FactVentas": respFacVentas,
+                        "Master": respActualizaMaster
+                    }
+
+                    logging.info(json.dumps(resp, indent=4, ensure_ascii=False))
+                    return json.dumps(resp, indent=4, ensure_ascii=False)
+                except Exception as e:
+                    logging.error(f"❌ Error al realizar el commit: {str(e)}")
+                # Verificar si se afectaron filas
+
+
+
+            except Exception as e:
+                logging.error(f"❌ Error al realizar la actualización de la cabecera: {str(e)}")
+                return json.dumps(f"❌ Error al realizar la actualización de la cabecera: {str(e)}", indent=4, ensure_ascii=False)
+
+
+
+        else:
+            logging.info(":: Actualiza tabla FactCab () ::")
+            logging.error("⚠️ :: Comprobante autorizado (Cae: "+str(cae)+",Nro comprobante Arca: "+str(nro_comp_full)+"), pero no se encontró la cabecera del comprobante en la base de datos, seguramente ya posee un CAE válido. Verifique !!! ::")
+            return json.dumps({
+                "control": "ERROR",
+                "codigo": "400",
+                "mensaje": "Comprobante autorizado (Cae: "+str(cae)+",Nro comprobante Arca: "+str(nro_comp_full)+"), pero no se encontró la cabecera del comprobante en la base de datos, seguramente ya posee un CAE. Verifique !!!"
+            }, indent=4, ensure_ascii=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    """
+    Pasajes a Sybase
+    
+    """
+
+    def grabarFacVentasSybase(self, id_usuario, cbte_original, cbte_autorizado, idFactCab=0):
+        logging.info("--------------> grabarFacVentasSybase("+str(idFactCab)+") <----------------------")
+        try:
+            # 🔹 Extraer datos del comprobante antes de autorizar
+            fe_original_data = json.loads(cbte_original)
+            fe_cab_original = fe_original_data["FeCabReq"]
+            fe_det_original = fe_original_data["FeDetReq"]
+
+            # 🔹 Extraer datos del comprobante autorizado
+            fe_cab_resp = cbte_autorizado.FeCabResp
+            fe_det_resp = cbte_autorizado.FeDetResp.FECAEDetResponse[0]  # Tomamos el primer comprobante
+
+            # 🔹 Extraer datos principales
+            fechaProcesoObj = datetime.strptime(fe_cab_resp.FchProceso, "%Y%m%d%H%M%S")
+            fchProceso = fechaProcesoObj.strftime("%Y-%m-%d")
+            fechaProcesoHora = fechaProcesoObj.strftime("%H:%M:%S")
+
+            fechaCaeObj = datetime.strptime(fe_det_resp.CAEFchVto, "%Y%m%d")
+            fechaCae = fechaCaeObj.strftime("%Y-%m-%d")
+
+
+            fechVenceObj = datetime.strptime(fe_det_resp.CAEFchVto, "%Y%m%d")
+            fechaVence = fechVenceObj.strftime("%Y-%m-%d")
+
+
+
+
+
+            # 🔹 Sentencia SQL para insertar datos
+            try:
+                conn = ConectorManagerDB(1)
+                with conn.get_connection().conn.cursor() as cursor:
+                    # Consulta principal
+                    sql_fp = """SELECT codigoSYsbase
+                                        FROM FactFormaPago ffp
+                                        INNER JOIN FormaPago fp ON fp.idFormaPago = ffp.idFormaPago
+                                        WHERE ffp.idFactCab = %s;
+                                    """
+                    cursor.execute(sql_fp, (idFactCab,))
+                    resu = cursor.fetchone()
+                    if resu[0] is None:
+                        formaPago = 0
+                    else:
+                        formaPago = resu[0]
+
+                with conn.get_connection().conn.cursor() as cursor:
+                    sql_pad = """SELECT apellido, nombre from PadronGral  WHERE idPadronGral = %s"""
+                    cursor.execute(sql_pad, (fe_det_original["IdPadron"],))
+                    resu = cursor.fetchone()
+                    if resu[0] is None:
+                        nombreApellido = ""
+                    else:
+                        nombreApellido = resu[0]+" "+resu[1]
+
+                iva_21 = 0
+                iva_105 =0
+                iva_27 =0
+                iva_extento = 0
+                # me fijo que iva es
+                for iva in fe_det_original["Iva"]["AlicIva"]:
+                    if iva["Id"] == 5:
+                        iva_21 = iva["Importe"]
+                        #print(f"Alícuota 21% encontrada - Base: {iva['BaseImp']}, Importe: {iva['Importe']}")
+                    elif iva["Id"] == 4:
+                        iva_105 = iva["Importe"]
+                        #print(f"Alícuota 10% encontrada - Base: {iva['BaseImp']}, Importe: {iva['Importe']}")
+                    elif iva["Id"] == 6:
+                        iva_27 = iva["Importe"]
+
+                    else:
+                        print(f"⚠️ Alícuota desconocida - ID: {iva['Id']}")
+
+
+                # traigo el detalle FactCabDetalle
+                fac_detalle = []
+                idDeposito = 1
+
+                with conn.get_connection().conn.cursor() as cursor:
+                    sql_fd = """SELECT Depositos.codigoDep FROM FactDetalle, Depositos WHERE FactDetalle.idFactCab = %s  AND FactDetalle.idDepositos = Depositos.idDepositos GROUP BY FactDetalle.idDepositos"""
+                    cursor.execute(sql_fd, (idFactCab,))
+                    resu = cursor.fetchone()
+                    if resu[0] is None:
+                        idDeposito = 1
+                    else:
+                        idDeposito = resu[0]
+
+
+
+
+                pto_venta_original = fe_det_original["CbteDesde"][:4]
+                nro_comprobante_original = fe_det_original["CbteDesde"][4:]
+
+
+                # Aca evaluar para la reautorizacion de hacer un uptdate de fac_ventas si el registro existe
+                # si no existe lo inserto y si existe lo actualizo
+
+
+
+                conn = ConectorManagerDB(2)
+                with conn.get_connection().conn.cursor() as cursor:
+                    # movimiento de cierre
+                    datosCierre = {
+                        "v_codigo": "CIERRE",
+                        "v_tipo_operacion": fe_cab_original["CbteTipo"],
+                        "v_fecha_operacion": str(fchProceso),
+                        "v_tipo_comprobante": fe_cab_original["CbteTipo"],
+                        "v_numero_comprobante": int(nro_comprobante_original),
+                        "v_numero_ctacte": fe_det_original["IdPadron"],
+                        "v_numero_mov": 0,
+                        "v_forma_pago": formaPago,
+                        "v_nombre": nombreApellido,
+                        "v_numero_cuit": int(fe_det_original["DocNro"]),
+                        "v_cantidad": 1,
+                        "v_descripcion": "FE: " + nombreApellido,
+                        "v_precio_unitario": float(fe_det_original["ImpNeto"]),
+                        "v_retencion1": float(0.00),
+                        "v_retencion2": float(0.00),
+                        "v_percepcion1": float(fe_det_original["ImpTrib"]),
+                        "v_percepcion2": float(0.00),
+                        "v_impuesto_interno": float(0.00),
+                        "v_otro_impuesto": float(0.00),
+                        "v_iva_ri": float(iva_21),
+                        "v_iva_rni": float(iva_105),
+                        "v_descuento": float(0.00),
+                        "v_bonificacion": float(fe_det_original["ImpTotal"]),
+                        "v_codigo_relacion": 1,
+                        "v_fecha_vencimiento": fechaVence,
+                        "v_facturado_sn": "S",
+                        "v_codigo_operador": 'DBA',
+                        "v_hora": fechaProcesoHora,
+                        "v_condicion_iva": fe_det_original["CondicionIVAReceptorId"],
+                        "pto_numero": fe_cab_original["PtoVta"],
+                        "v_tipo_comprobante_asoc": 0,  # supongo que es cuando anulamos ???
+                        "v_numero_comprobante_asoc": 0,  # supongo que es cuando anulaos ???,
+                        "v_deposito": idDeposito,
+                        "v_contabil": "S",
+                        "v_cuotas": int(0),
+                        "v_cuotas_interes": float(0),
+                        "canje_sn": "N",
+                        "canje_nro_cto": "0",
+                        "li_nro_comp": 0,
+                        "li_preimp": 0,
+                        "v_perce2459_1": float(0),
+                        "v_perce2459_105": float(0),
+                        "cod_actividad": 0,
+                        "autorizado_sn": "S",
+                        "pto_autorizado": fe_cab_resp["PtoVta"],
+                        "tipo_autorizado": fe_cab_resp["CbteTipo"],
+                        "nro_autorizado": fe_det_resp["CbteDesde"],
+                        "fe_autorizado": fchProceso,
+                        "CAE": int(fe_det_resp["CAE"]),
+                        "fe_Vto": fechaCae,  # Conversión de fecha
+                    }
+                    sql_insert = """INSERT INTO fac_ventas(v_codigo, v_tipo_operacion, v_fecha_operacion, v_tipo_comprobante, v_numero_comprobante, v_numero_ctacte, 
+                                   v_numero_mov, v_forma_pago, v_nombre, v_numero_cuit, v_cantidad, v_descripcion, v_precio_unitario, v_retencion1, 
+                                   v_retencion2, v_percepcion1, v_percepcion2, v_impuesto_interno, v_otro_impuesto, v_iva_ri, v_iva_rni, v_descuento, 
+                                   v_bonificacion, v_codigo_relacion, v_fecha_vencimiento, v_facturado_sn, v_codigo_operador, v_hora, v_condicion_iva, 
+                                   pto_numero, v_tipo_comprobante_asoc, v_numero_comprobante_asoc, v_deposito, v_contabil, v_cuotas, v_cuotas_interes, 
+                                    canje_sn, canje_nro_cto, li_nro_comp, li_preimp, v_perce2459_1, v_perce2459_105, cod_actividad, autorizado_sn, pto_autorizado,
+                                   tipo_autorizado, nro_autorizado, fe_autorizado, CAE, fe_Vto) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                    try:
+                        cursor.execute(sql_insert, tuple(datosCierre.values()))
+                        conn.get_connection().conn.commit()  # Confirmar la transacción
+                        logging.error("✅ Registro insertado correctamente en fac_ventas")
+                        return True
+                    except Exception as e:
+                        logging.error(":: Error al insertar en FactVentasSybase: " + str(e))
+            except Exception as e:
+                #logging.error("Error General al insertar en FactVentasSybase: " + str(e))
+                return False
+            finally:
+                conn.get_connection().conn.close()
+            # 🔹 Si todo sale bien, retornar True
+            return True
+
+        except Exception as e:
+            #logging.error("Error al grabar en FactVentasSybase: "+str(e))
+            return False
+
+
+
+
+
+    def actualizaMasterSybase(self, id_usuario, cbte_original, cbte_autorizado, idFactCab=0):
+        logging.info("--------------> actualizaMasterSybase("+str(idFactCab)+"), actualiza por nro_comp, fecha_emision y libro 50 <----------------------")
+        try:
+            conn = ConectorManagerDB(1)
+            cursor = conn.get_connection().conn.cursor()
+            sql_libro = """ SELECT valor from Parametros where  Parametros.grupo = 'contable' and Parametros.nombreParametro = 'codigo_libro_sybase';  """
+            cursor.execute(sql_libro, )
+            lib = cursor.fetchone()
+            if lib:
+                codigo_libro = lib[0]
+            else:
+                codigo_libro = 50  # Valor por defecto si no se encuentra el libro
+            # SELECT * FROM Master WHERE nro_comp = '1500012174' AND m_ingreso = '2025-06-12' AND codigo_libro = 50 and padron_codigo = 6028
+
+            # 🔹 Extraer datos del comprobante antes de autorizar
+            fe_original_data = json.loads(cbte_original)
+            fe_cab_original = fe_original_data["FeCabReq"]
+            fe_det_original = fe_original_data["FeDetReq"]
+
+            # 🔹 Extraer datos del comprobante autorizado
+            fe_cab_resp = cbte_autorizado.FeCabResp
+            fe_det_resp = cbte_autorizado.FeDetResp.FECAEDetResponse[0]  # Tomamos el primer comprobante
+
+            # 🔹 Extraer datos principales
+            fechaProcesoObj = datetime.strptime(fe_cab_resp.FchProceso, "%Y%m%d%H%M%S")
+            fchProceso = fechaProcesoObj.strftime("%Y-%m-%d")
+            fechaProcesoHora = fechaProcesoObj.strftime("%H:%M:%S")
+
+            fechaCaeObj = datetime.strptime(fe_det_resp.CAEFchVto, "%Y%m%d")
+            fechaCae = fechaCaeObj.strftime("%Y-%m-%d")
+
+            fechVenceObj = datetime.strptime(fe_det_resp.CAEFchVto, "%Y%m%d")
+            fechaVence = fechVenceObj.strftime("%Y-%m-%d")
+            # armo el preimpreso del comprobante
+
+            pto_vta = fe_cab_original["PtoVta"]
+            nro_comprobante = fe_det_resp['CbteDesde']
+            pto_vta_formateado = f"{pto_vta:0<4}"
+            nro_comprobante_formateado = f"{nro_comprobante:06d}"
+            nro_comp_preimp = f"{pto_vta_formateado}{nro_comprobante_formateado}"
+            print(nro_comp_preimp)  # Salida esperada: 3500013816
+
+            # 🔹 Sentencia SQL para actualizar datos en master
+            conn = ConectorManagerDB(2)
+            cursor = conn.get_connection().conn.cursor()
+            sql_upt_master = """UPDATE master
+                                SET nro_comp_asoc = ?,
+                                 nro_comp_preimp = ?,
+                                 autoriza_codigo = ?
+                                WHERE "nro_comp" = ? and 
+                                    "m_ingreso" = ? and 
+                                    "codigo_libro" = ? and  
+                                    "padron_codigo" = ? """
+            params={
+                "nro_comp_asoc": nro_comp_preimp,
+                "nro_comp_preimp": nro_comp_preimp,
+                "autoriza_codigo": fe_cab_original["PtoVta"],
+                "nro_comp  ": fe_det_original["CbteDesde"],
+                "m_ingreso": fchProceso,
+                "codigo_libro": codigo_libro,
+                "padron_codigo": fe_det_original["IdPadron"]
+            }
+
+            cursor.execute(sql_upt_master, tuple(params.values()))
+            conn.get_connection().conn.commit()
+            logging.info("✅ Registro actualizado correctamente en master")
+            return True
+            # 🔹 Extraer datos del comprobante antes de autorizar
+        except Exception as e:
+            return False
+        finally:
+            conn.get_connection().conn.close()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def generar_numero_comprobante(self, pto_vta, nro_comprobante):
+        nro =  f"{int(pto_vta):04d}{int(nro_comprobante):08d}"
+        return str(nro)
+
+
 
 
 
@@ -789,6 +1240,11 @@ class Afip():
         except requests.exceptions.RequestException as e:
             logging.error(f"Error al conectar con AFIP: {e}")
             return {"control": "ERROR", "mensaje": f"Error al conectar con AFIP: {str(e)}"}
+
+
+
+
+
 
 
     def borraErrorARCASybase(self, destino, id_usuario, cbte=None):
@@ -895,266 +1351,202 @@ class Afip():
         else:
             logging.info(":: ATENCION !! No se graba en la base de datos de facturación nueva ::")
 
-
-
-
-
-
     def traerComprobante(self, id_usuario, comprobante=None):
         fechaTemp = str(comprobante["cbteFch"])
         fecha = datetime.strptime(fechaTemp, "%Y-%m-%d").strftime("%Y%m%d")
         nro_comprobante = comprobante["idFactCab"]
-        nro_comprobante_asoc = comprobante["idFactCabRelacionado"]
+        nro_fac_cab_asoc = comprobante["idFactCabRelacionado"]
         pto_venta = comprobante["cbtePtoVta"]
         tipo_comprobante = comprobante["cbteTipo"]
 
-        if nro_comprobante is None:
-            logging.error("Error: 'Número de Comprobante' no tiene un valor válido.")
-        if id_usuario is None:
-            logging.error("Error: 'Usuario' no tiene un valor válido.")
-        if nro_comprobante is None:
-            logging.error("Error: 'Nro de Comprobante' no tiene un valor válido.")
-        if pto_venta is None:
-            logging.error("Error: 'Punto de venta' no tiene un valor válido.")
-        if tipo_comprobante is None:
-            logging.error("Error: 'Tipo de comprobante' no tiene un valor válido.")
 
-        # Traigo la cabecera por idFactCab
+        if not all([nro_comprobante, id_usuario, pto_venta, tipo_comprobante]):
+            logging.error("Error: Uno o más campos requeridos no tienen un valor válido.")
+            return None
 
         logging.info(":: TRAER COMPROBANTE ::")
 
-
-
-
-        conn = ConectorManagerDB(1)
-        cursor = conn.get_connection().conn.cursor()
-        query = """SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, ImpOpEx, 
-                   ImpTotal, ImpNeto, ImpTrib, ImpIva, FchServDesde, FchServHasta, 
-                   FchVtoPago, MonId, cotDolar, numeroAfip, cai 
-                   FROM v_afipws_fe_master WHERE idFactCab = %s"""
-        cursor.execute(query, (nro_comprobante,))
-        resu = cursor.fetchone()  # Solo obtener una fila
-
-        # Definir los nombres de las columnas en el mismo orden que en el SELECT
-        columnasDet = ["Concepto", "DocTipo", "DocNro", "CbteDesde", "CbteHasta", "ImpOpEx",
-                       "ImpTotal", "ImpNeto", "ImpTrib", "ImpIva", "FchServDesde", "FchServHasta",
-                       "FchVtoPago", "MonId", "cotDolar", "NumeroAfip", "Cai"]
-
-        # Convertir la tupla en un diccionario usando zip correctamente
-        resultado = dict(zip(columnasDet, resu))
-        tieneIva = "N"
-        tieneTributos = "N"
-        docTipoDocu = resultado["DocTipo"]
-        iva = []
-        tributos_items = []
-        if resultado["ImpTrib"] > 0:
-            tieneTributos = "S"
-        if resultado["ImpIva"] > 0:
-            tieneIva = "S"
-
-
-
-
-        if docTipoDocu == 0:
-            # Debo buscar el tipo de documento en elpadron por cuit
-            print("Debo buscar el tipo de documento en elpadron por cuit")
-            query = ("SELECT cuit,  CASE WHEN LENGTH(cuit) = 11 THEN 80 ELSE 96  END AS codigo_documento FROM PadronGral where cuit = %s;")
-            cursor.execute(query,  (resultado["DocNro"],))
-            resu_tipodoc = cursor.fetchone()
-            if resu_tipodoc:
-                resultado["DocTipo"] =  resu_tipodoc[1]
-                print("Código de documento encontrado " + str(resultado["DocTipo"]))
+        try:
+            conn = ConectorManagerDB(1)
+            if conn.get_connection().conn is None:
+                print("❌ No se pudo establecer conexión con la base de datos.")
             else:
-                print("No se encontró el tipo de documento para el CUIT proporcionado.")
+                print("✅ Conexión establecida correctamente.")
+            with conn.get_connection().conn.cursor() as cursor:
+                # Consulta principal
+                query = """SELECT IdPadron, Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, CbteFch, ImpOpEx, 
+                           ImpTotal, ImpTotConc, ImpNeto, ImpTrib, ImpIVA, FchServDesde, FchServHasta, 
+                           FchVtoPago, MonId, MonCotiz, NumeroComprobanteArca
+                           FROM v_afipws_fe_master WHERE idFactCab = %s"""
+                cursor.execute(query, (nro_comprobante,))
+                resu = cursor.fetchone()
+
+                if not resu:
+                    logging.error("No se encontró el comprobante.")
+                    return None
+
+                columnasDet = ["IdPadron","Concepto", "DocTipo", "DocNro", "CbteDesde", "CbteHasta", "CbteFch", "ImpOpEx",
+                               "ImpTotal", "ImpTotConc", "ImpNeto", "ImpTrib", "ImpIVA", "FchServDesde", "FchServHasta",
+                               "FchVtoPago", "MonId", "MonCotiz", "NumeroComprobanteArca"]
+                resultado = dict(zip(columnasDet, resu))
+                campos_importe = ["ImpTotal", "ImpTotConc", "ImpNeto", "ImpTrib", "ImpIVA"]
+                for campo in campos_importe:
+                    if campo in resultado and resultado[
+                        campo] is not None:  # Verificar que el campo existe y no es None
+                        resultado[campo] = Decimal(resultado[campo]).quantize(Decimal('0.00'))
+
+                print(resultado)
+
+            tieneIva = "S" if resultado["ImpIVA"] > 0 else "N"
+            tieneTributos = "S" if resultado["ImpTrib"] > 0 else "N"
+
+            # Buscar tipo de documento en el padrón si es necesario
+            padronCodigo = resultado["IdPadron"]
+            if resultado["DocTipo"] == 0:
+                with conn.get_connection().conn.cursor() as cursor:
+
+                    query = """SELECT cuit, CASE WHEN LENGTH(cuit) = 11 THEN 80 ELSE 96 END AS codigo_documento FROM PadronGral WHERE idPadronGral = %s"""
+                    cursor.execute(query, (padronCodigo,))
+                    resu_tipodoc = cursor.fetchone()
+                    if resu_tipodoc:
+                        resultado["DocTipo"] = resu_tipodoc[1]
+                    else:
+                        logging.warning("No se encontró el tipo de documento para el CUIT proporcionado.")
 
 
-        # IVA
-        if tieneIva == "S":
-            queryIva = ("SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId "
-                        "FROM FactPie, AfipWsTiposIva WHERE idFactCab = %s AND idSisTipoModelo = 2 "
-                        "AND AfipWsTiposIva.alicuota = FactPie.porcentaje")
-            cursor.execute(queryIva, (nro_comprobante,))
-            resultadoIva = cursor.fetchall()
-            if not resultadoIva:
-                print("⚠ No se encontraron datos de IVA.")
-
-            else:
-                for item in resultadoIva:
-                    iva_item = {
-                        "Id": int(item[4]) if item[4] is not None else 0,
-                        "BaseImp": float(item[3]) if item[3] is not None else 0.0,
-                        "Importe": float(item[2]) if item[2] is not None else 0.0
-                    }
-
-                    iva.append(iva_item)
-            print("-- Iva: "" ------------------------------------------------------")
-            print(json.dumps(iva, indent=4))
-
-        # TRIBUTOS
-
-        if tieneTributos == "S":
-
-            queryTributos = (
-                "SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId FROM FactPie, AfipWsTiposIva WHERE idFactCab = %s AND idSisTipoModelo <> 2 AND AfipWsTiposIva.alicuota = FactPie.porcentaje")
-            cursor.execute(queryTributos, (nro_comprobante,))
-            resultadoTributos = cursor.fetchall()
-            if not resultadoTributos:
-                print("⚠ No se encontraron datos de tributos.")
-            else:
-                for item in resultadoTributos:
-                    tributo_item = {
-                        "Id": int(item[4]) if item[4] is not None else 0,
-                        "Desc": str(item[0]),
-                        "BaseImp": float(item[3]) if item[3] is not None else 0.0,
-                        "Alic": float(item[1]) if item[1] is not None else 0.0,
-                        "Importe": float(item[2]) if item[2] is not None else 0.0,
-                    }
-                    tributos_items.append(tributo_item)
-                print(json.dumps(tributos_items, indent=4))  # Imprimir la lista completa
 
 
-        # CBTES ASOCIADOS
-        if nro_comprobante_asoc > 0 :
-            if  resultado[14] == None:
-                numeroComprobanteArca = 0
-                caiArca = ""
-            else:
-                numeroComprobanteArca = resultado[14]
-                caiArca = str(resultado[15])
-            # nro_comprobante = este numero en esta parte quiza sea el nro electronico ver si anda asi
-            query = "SELECT numeroAfip, cai, idCteTipo, letra FROM v_afipws_fe_master  WHERE idFactCab = %s"
-            cursor.execute(query, (nro_comprobante_asoc,))
-            resultado_asoc = cursor.fetchall()[0]
-            cursor.execute(resultado_asoc)
-            resultadoAsoc = cursor.fetchall()
-            numeroArcaAsoc = resultadoAsoc[0]
-            caiAsoc = resultadoAsoc[1]
-            idCteTipoAsoc = resultadoAsoc[2]
-            idLetraAsoc = resultadoAsoc[3]
-            # Busco el tipo de comprobante afip en idSisCodigoAfip
-            query = "SELECT idCteTipoSisLetra, idSisCodigoAfip FROM CteTipoSisLetras WHERE idCteTipo = %s AND idSisLetra = %s"
-            cursor.execute(query, (resultadoAsoc, idLetraAsoc))
-            resultado_asoc_arca = cursor.fetchall()[0]
-            cursor.execute(resultado_asoc_arca)
-            resultadoAsoc_arca = cursor.fetchall()
-            idSisLetra = resultadoAsoc_arca[0]
-            tipoCompAsoc = resultadoAsoc_arca[1]
 
-            # busco el punto de venta asociado
-            query = ("SELECT ptoVenta FROM CteNumerador, PtoVenta WHERE "
-                     "CteNumerador.idPtoVenta= PtoVenta.idPtoVenta AND "
-                     "CteNumerador.idCteTipoSisLetra  = %s")
-            cursor.execute(query, (idSisLetra,))
-            resultado_asoc_pto = cursor.fetchall()[0]
-            ptoVentaAsoc= resultado_asoc_pto[0]
+
+            # Obtener datos de IVA
+            iva = []
+            if tieneIva == "S":
+                with conn.get_connection().conn.cursor() as cursor:
+                    queryIva = """SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId 
+                                  FROM FactPie, AfipWsTiposIva 
+                                  WHERE FactPie.idFactCab = %s AND FactPie.idSisTipoModelo = 2 
+                                  AND AfipWsTiposIva.alicuota = FactPie.porcentaje"""
+                    cursor.execute(queryIva, (nro_comprobante,))
+
+                    resultadoIva = cursor.fetchall()
+                    for item in resultadoIva:
+                        iva.append({
+                            "Id": int(item[4]) if item[4] is not None else 0,
+                            "BaseImp": float(item[3]) if item[3] is not None else 0.0,
+                            "Importe": float(item[2]) if item[2] is not None else 0.0
+                        })
+
+            # Obtener datos de tributos
+            tributos_items = []
+            if tieneTributos == "S":
+                with conn.get_connection().conn.cursor() as cursor:
+                    queryTributos = """SELECT detalle, porcentaje, importe, baseImponible, AfipWsTiposIva.idTiposIva AS afipId 
+                                       FROM FactPie, AfipWsTiposIva 
+                                       WHERE idFactCab = %s AND idSisTipoModelo <> 2 
+                                       AND AfipWsTiposIva.alicuota = FactPie.porcentaje"""
+                    cursor.execute(queryTributos, (nro_comprobante,))
+                    resultadoTributos = cursor.fetchall()
+                    for item in resultadoTributos:
+                        tributos_items.append({
+                            "Id": int(item[4]) if item[4] is not None else 0,
+                            "Desc": str(item[0]),
+                            "BaseImp": float(item[3]) if item[3] is not None else 0.0,
+                            "Alic": float(item[1]) if item[1] is not None else 0.0,
+                            "Importe": float(item[2]) if item[2] is not None else 0.0
+                        })
+
+
+            # CBTES ASOCIADOS
             cbtes_asoc = []
+            if nro_fac_cab_asoc is not None and nro_fac_cab_asoc > 0:
+                    # Traer datos de la cabecera del comprobante asociado
+                conn = ConectorManagerDB(1)
+                with conn.get_connection().conn.cursor() as cursor:
+                    sql_cab = """SELECT ABS(RIGHT(numeroAfip, 8)) AS  CNroAsoc, CAST(LEFT(numeroAfip, 4) AS UNSIGNED) AS PVtaAsoc, codigoAfip AS CbteTipoAsoc, cuit AS CuitAsoc FROM FactCab WHERE idFactCab = %s"""
 
-            for item in resultadoAsoc:
-                cbte_item = {
-                    "CTipoAsoc": int(tipoCompAsoc),  # Tipo de comprobante asociado
-                    "PVtaAsoc": int(ptoVentaAsoc[1]),  # Punto de venta asociado
-                    "CNroAsoc": int(numeroArcaAsoc),  # Número comprobante asociado
-                    "CbteNro": int(nro_comprobante)  # Número de comprobante
-                }
-                cbtes_asoc.append(cbte_item)
+                    cursor.execute(sql_cab, (nro_fac_cab_asoc,))
+                    resuCab = cursor.fetchall()
+
+                    for item in resuCab:
+                        cbte_item = {
+                            "Nro": int(item[0]),  # Número comprobante asociado
+                            "PtoVta": int(item[1] // 1000),  # Punto de venta asociado
+                            "Tipo": int(item[2]),  # Tipo de comprobante asociado
+                            "Cuit": int(item[3])  # Número de comprobante
+                        }
+                        cbtes_asoc.append(cbte_item)
+
+            periodo_asoc = []
+            opcionales =[]
+            # Construir datos finales
+            datos_cabecera = {
+                "PtoVta": pto_venta,
+                "CbteTipo": tipo_comprobante,
+                "CantReg": 1,
+            }
+            """datos_master = {
+                columnasDet: (str(valor) if isinstance(valor, (Decimal, date)) else valor)
+                for columnasDet, valor in zip(columnasDet, resultado)
+            }"""
 
 
-        # OPCIONALES
 
-        """
-        
-        
-        ........
-        
-        
-        
-        """
 
-        # PERIODOS ASOCIADOS
 
-        """
-        
-        
-        
-        ---------------------
-        
-        
-        """
 
-        # Convertir los datos en un diccionario
-        datos_cabecera = {
-            "PtoVta": pto_venta,
-            "CbteTipo": tipo_comprobante,
-            "CantReg": 1,
-        }
+            datos_master = {
+                columnasDet[i]: (str(valor) if isinstance(valor, (Decimal, date)) else valor)
+                for i, valor in enumerate(resultado.values())
+            }
 
-        datos_master = {
-            columnasDet: (str(valor) if isinstance(valor, (Decimal, date)) else valor)
-            for columnasDet, valor in zip(columnasDet, resultado)
-        }
-
-        if resultado["DocTipo"] == 80:
-            cuit = datos_master["DocNro"]
-            query_iva_con = ("SELECT v_condicion_iva FROM fac_ventas where v_numero_comprobante = " + str(
-                nro_comprobante) + " and "
-                                   "pto_numero = " + str(pto_venta) + " and v_tipo_comprobante = " + str(
-                tipo_comprobante) + " and REPLACE(v_fecha_operacion, '-', '') = '" + str(
-                fecha) + "' and v_codigo = 'CIERRE'")
-
-            cursor.execute(query_iva_con)
-            conIvaRecept = cursor.fetchone()
-            if conIvaRecept is None:
-                condicionIVAReceptorId = 4
+            if iva:
+                datos_master["Iva"] = {"AlicIva": iva}
             else:
-                condicionIVAReceptorId = str(conIvaRecept[0])
-        else:
-            condicionIVAReceptorId = 4
+                datos_master["Iva"] = None
+            if cbtes_asoc:
+                datos_master["CbtesAsoc"] = {"CbteAsoc": cbtes_asoc}
+            else:
+                datos_master["CbtesAsoc"] = None
+            if opcionales:
+                datos_master["Opcionales"] = {"Opcional": opcionales}
+            else:
+                datos_master["Opcionales"] = None
 
-        if iva:
-            datos_master["Iva"] = {"AlicIva": iva}
-        else:
-            datos_master["Iva"] = None
-        if cbtes_asoc:
-            datos_master["CbtesAsoc"] = {"CbteAsoc": cbtes_asoc}
-        else:
-            datos_master["CbtesAsoc"] = None
-        """
-        if opcionales:
-            datos_master["Opcionales"] = {"Opcional": opcionales}
-        else:
-            datos_master["Opcionales"] = None
+            if periodo_asoc:
+                datos_master["PeriodoAsoc"] = periodo_asoc
+            else:
+                datos_master["PeriodoAsoc"] = None
+            if tributos_items:
+                datos_master["Tributos"] = {"Tributo": tributos_items}
+            else:
+                datos_master["Tributos"] = None
 
-        if periodo_asoc:
-            datos_master["PeriodoAsoc"] = periodo_asoc
-        
-        else:
-            datos_master["PeriodoAsoc"] = None
-        """
-        if tributos_items:
-            datos_master["Tributos"] = {"Tributo": tributos_items}
-        else:
-            datos_master["Tributos"] = None
+            if resultado["DocTipo"] == 80:
+                conn = ConectorManagerDB(1)
+                with conn.get_connection().conn.cursor() as cursor:
+                    # Consulta principal
+                    query = """SELECT idSisSitIVA FROM v_afipws_fe_master WHERE idFactCab = %s"""
+                    cursor.execute(query, (nro_comprobante,))
+                    resu = cursor.fetchone()
+                    if resu is None:
+                        condicionIVAReceptorId = 4
+                    else:
+                        condicionIVAReceptorId = resu[0]
 
-        datos_master["CondicionIVAReceptorId"] = int(condicionIVAReceptorId)
-        json_unificado = json.dumps({
-            "FeCabReq": datos_cabecera,
-            "FeDetReq": datos_master
-        }, indent=4, ensure_ascii=False)
-        return json_unificado
+            else:
+                condicionIVAReceptorId = 4
 
+            datos_master["CondicionIVAReceptorId"] = int(condicionIVAReceptorId)
+            json_unificado = json.dumps({
+                "FeCabReq": datos_cabecera,
+                "FeDetReq": datos_master
+            }, indent=4, ensure_ascii=False)
 
+            return json_unificado
 
-
-        return ("RESPUESTA TEMPORAL: ESTAMOS DESARROLANDO ....")
-
-
-
-
-
-
-
-
-
+        except Exception as e:
+            logging.error(f"Error en traerComprobante: {e}")
+            return None
 
 
 
@@ -1178,19 +1570,33 @@ class Afip():
         if fecha is None:
             logging.error("Error: 'Fecha del Comprobante' no tiene un valor válido.")
 
+        try:
+            query = ("SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, "
+                     "REPLACE(CAST(CbteFch AS VARCHAR), '-', '') AS CbteFch, "
+                     "ImpTotal, ImpTotConc, ImpNeto, ImpOpEx, ImpTrib, ImpIVA, "
+                     "REPLACE(CAST(FchServDesde AS VARCHAR), '-', '') AS FchServDesde, "
+                     "REPLACE(CAST(FchServHasta AS VARCHAR), '-', '') AS FchServHasta, "
+                     "REPLACE(CAST(FchVtoPago AS VARCHAR), '-', '') AS FchVtoPago, "
+                     "MonId, MonCotiz, v_numero_comprobante "
+                     "FROM afipws_fe_master  WHERE  CbteDesde = %s AND CbteTipo = %s AND PtoVta = %s AND  "
+                     "REPLACE(CAST(CbteFch AS VARCHAR), '-', '') = %s AND Resultado <> 'A'")
 
 
-        query = ("SELECT Concepto, DocTipo, DocNro, CbteDesde, CbteHasta, REPLACE(CbteFch, '-', '') AS CbteFch,  ImpTotal, ImpTotConc, ImpNeto, ImpOpEx, "
-                "ImpTrib, ImpIVA, REPLACE(FchServDesde, '-', '') AS FchServDesde, REPLACE(FchServHasta, '-', '') AS FchServHasta, REPLACE(FchVtoPago, '-', '') AS FchVtoPago, MonId, MonCotiz, v_numero_comprobante"
-                " FROM  afipws_fe_master WHERE CbteDesde = " + str(nro_comprobante) +
-                " AND CbteTipo = " + str(tipo_comprobante) +
-                " AND PtoVta = " + str(pto_venta) +
-                "AND Resultado <> 'A' " +
-                "AND REPLACE(CbteFch, '-', '') = '" + str(fecha) + "'"
-        )
-        # AGREGAR AL QUERY --> and Resultado <> A LUEGO
-        cursor.execute(query)
-        resultado = cursor.fetchall()[0]
+            cursor.execute(query, (nro_comprobante, tipo_comprobante, pto_venta, fecha))
+            resultado = cursor.fetchall()
+
+            if not resultado:
+                print("⚠ No se encontraron resultados para la consulta.")
+                self.grabarRespuestaARCA(2, id_usuario, 500, "TraerComprobanteSybase","No se encontraron el comprobante "+str(nro_comprobante)+" en afipws_fe_master para la consulta.", nro_comprobante)
+
+            else:
+                for row in resultado:
+                    print(row)
+
+        except Exception as e:
+            self.grabarRespuestaARCA(2, id_usuario, 500, "TraerComprobanteSybase","e produjo un error al ejecutar la consulta sql en afipws_fe_master", comprobante)
+            print(f"❌ Se produjo un error al ejecutar la consulta sql: {str(e)}")
+
         tieneIva = "N"
         tieneTributos ="N"
         iva = []

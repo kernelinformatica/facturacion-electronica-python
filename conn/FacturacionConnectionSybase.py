@@ -23,7 +23,7 @@ class DBConnectionSybase:
         self.prt = config['CONEXION']['prt']
         self.nombreCliente = config['EMPRESA']['nombre']
         self.token = config['TOKEN']['TOKEN']
-
+        #print("---> FacturacionConnectionSybase: "+str(self.serv)+" | "+str(self.db)+" | "+str(self.usr)+" | "+str(self.passwd)+" | "+str(self.prt))
         conn = pyodbc.connect('DSN=' + self.serv + ';Database=' + self.db + ';UID=' + self.usr + ';PWD=' + self.passwd, autocommit=True)
         conn.setdecoding(pyodbc.SQL_CHAR, encoding='latin1')
         conn.setencoding('latin1')

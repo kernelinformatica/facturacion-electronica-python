@@ -1,5 +1,6 @@
 import mysql.connector
 from mysql.connector import Error
+print("MYSQL CONECECTOR, VERSION: "+mysql.connector.__version__)
 
 class DBConnection:
     def __init__(self):
@@ -11,7 +12,7 @@ class DBConnection:
         self.password = "root"
         self.port = "3306"
         self.conn = self.create_connection()
-
+        print("✅ Conexión establecida con éxito.")
 
     def create_connection(self):
         try:

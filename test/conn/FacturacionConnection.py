@@ -10,12 +10,11 @@ class DBConnection:
         self.ambiente= "TEST"
         #self.ambiente = "PROD"
         self.host = "10.0.0.33"
-        self.database = "dbFacturacion_mp"
+        self.database = "dbFacturacion_20250122"
         self.user = "root"
         self.password = "root"
         self.port = "3306"
         self.conn = self.create_connection()
-
 
     def create_connection(self):
         try:
@@ -24,14 +23,19 @@ class DBConnection:
                 database=self.database,
                 user=self.user,
                 password=self.password,
-                port = self.port
+                port=self.port
             )
             if conn.is_connected():
                 print("Connection to MySQL se ha establecido con éxito.")
                 return conn
         except Error as e:
-            print(f"Error: {e}")
-            self.conn = None
+            print(f"Error al conectar: {e}")
+            raise  # Esto hará que el programa muestre el error completo en la consola
+        except Exception as ex:
+            print(f"⚠️ Error inesperado: {ex}")
+
+
+
 
     def execute(self, query, params=None):  # ✅ Agregar `params` como argumento opcional
         if self.conn is None:

@@ -1,3 +1,5 @@
+import json
+
 from flask import Blueprint, request, jsonify
 import logging
 from tokens import Tokens as Tokens
@@ -11,7 +13,7 @@ wsfe_instance = wsfe()
 
 # **🔹 Autorizar factura electrónica**
 @facturacion_bp.route('/autorizarComprobante', methods=['POST'])
-def autorizarComprobante(id_usuario=0, parametros=None):
+def autorizarComprobante(id_usuario=0,  parametros=None):
 
 
     try:
@@ -37,6 +39,8 @@ def autorizarComprobante(id_usuario=0, parametros=None):
 def validarConexionConArca():
     try:
         print("Validando conexión con AFIP...")
+
+
         response = conexion_afip.validarConexion()
         return jsonify(response)
     except Exception as e:
@@ -47,67 +51,50 @@ def validarConexionConArca():
 # **🔹 Obtener autenticación con AFIP**
 @facturacion_bp.route('/obtenerAutenticacion', methods=['post'])
 def getLogin(id_usuario):
-
     try:
-
-        # Parametros por post
-
-        """logging.info("Iniciando validación de conexión con AFIP...")
-        if not request.is_json:
-            return jsonify({"control": "ERROR", "mensaje": "El request no contiene JSON válido"}), 400
-      
-        data = request.get_json()
-        if not data:
-            return jsonify({"control": "ERROR", "mensaje": "El cuerpo de la solicitud está vacío"}), 400
-"""
-
+        # Validar el ID de usuario
         if not id_usuario:
             return jsonify({"control": "ERROR", "mensaje": "Usuario no proporcionado"}), 400
 
-
-        # BUSCO SI TIENE UN TOKEN VALIDO O VIGENTE
+        # Buscar token vigente
         tok = Tokens()
         tokenResponse = tok.buscarTokenVigente(id_usuario)
-        if tokenResponse["codigo"] == 200:
-            for item in tokenResponse["datos"]:
-             return  tokenResponse, tokenResponse["codigo"]
-        else:
-            logging.info(":: Token no vigente, generando nuevo token...")
-            # Generar un nuevo token
-            resp = conexion_afip.login(id_usuario)
-            if resp["codigo"] == 200:
-                return resp, resp["codigo"]
-                logging.info(":: Autenticación exitosa con AFIP. ::")
-            else:
-                return jsonify(resp), 404
-                logging.info(":: Algo salio mál:  " +str(resp)+"::")
 
+        if tokenResponse["codigo"] == 200:
+            logging.info(":: Token vigente encontrado ::")
+            return tokenResponse, 200
+
+        logging.info(":: Token no vigente, generando nuevo token... ::")
+
+        # Intentar generar nuevo token
+        resp = conexion_afip.login(id_usuario)
+
+        # Asegurar que la respuesta sea un diccionario JSON válido
+        if isinstance(resp, str):
+            resp = json.loads(resp)
+
+        # Determinar el código de respuesta basado en la autenticación
+        codigo = 200 if resp.get("control") == "OK" else 404
+
+        # Registrar log de éxito o error
+        if codigo == 200:
+            logging.info(":: Autenticación exitosa con ARCA. ::")
+        else:
+            logging.info(f":: Algo salió mal al autenticar con ARCA: {resp} ::")
+
+        # Retornar la respuesta en formato JSON compatible con APIs Flask
+        return jsonify(resp), codigo
 
     except Exception as e:
-        # Manejo de errores
-        logging.error(f"Error en obtenerAutenticacion: {str(e)}")
-        return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
+         logging.error(f"❌ Error autenticando con ARCA: {str(e.strerror)}")
+         return jsonify({"control": "ERROR", "mensaje": f"Error autenticando con ARCA: {str(e)}"}), 500
 
 
 @facturacion_bp.route('/consultarCoprobanteEmitido', methods=['post'])
-def consultarComprobanteEmitido(id_usuario=0, cbteTipo=0, cbteNro=0, cbtePtoVta=0):
-    if id_usuario == 0 :
-        logging.error(f"❌ ID de usuario no proporcionado")
-        return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
-
-    if cbteTipo  == 0:
-        logging.error(f"❌ Tipo de Comprobante no proporcionado")
-        return jsonify({"control": "ERROR", "mensaje": "Tipo de comprobante no proporcionado"}), 400
-    if cbteNro == 0:
-        logging.error(f"❌ Número de Comprobante no proporcionado")
-        return jsonify({"control": "ERROR", "mensaje": "Número de Comprobante no proporcionado"}), 400
-
-    if cbtePtoVta == 0:
-        logging.error(f"❌ Punto de venta no proporcionado")
-        return jsonify({"control": "ERROR", "mensaje": "Punto de venta no proporcionado"}), 400
+def consultarComprobanteEmitido(id_usuario=0, parametros=None):
     try:
         # Consultar el comprobante emitido
-        response = wsfe_instance.consultarComprobanteEmitido(id_usuario, cbteTipo, cbteNro, cbtePtoVta)
+        response = wsfe_instance.consultarComprobanteEmitido(id_usuario, parametros["CbteTipo"], parametros["CbteNro"], parametros["PtoVta"])
         return response
     except Exception as e:
         logging.error(f"Error en consultarComprobanteEmitido: {e}")
@@ -154,21 +141,27 @@ def validarToken(id_usuario):
         # Obtener el token vigente de la base de datos
         tokenResponse = getLogin(id_usuario)
 
-        # Si tokenResponse es una tupla, accede a sus elementos
+        # Si `tokenResponse` es una tupla, desempacarla correctamente
         if isinstance(tokenResponse, tuple):
             tokenResponse, codigo = tokenResponse
         else:
-            raise Exception("Respuesta inesperada de getLogin.")
-
-        if tokenResponse.get("codigo") == 200:
-            for token in tokenResponse.get("datos", []):
-                return token
-        else:
-            raise Exception("No se encontró un token vigente.")
+            logging.error("❌ Respuesta inesperada de getLogin.")
             return None
 
+        # Verificar si el token es válido
+        if tokenResponse.get("codigo") == 200:
+            token_datos = tokenResponse.get("datos", [])
+            if token_datos:
+                return token_datos[0]  # Retorna solo el primer token encontrado
+            else:
+                logging.error("❌ No se encontraron tokens en los datos.")
+                return None
+
+        logging.info(":: No se encontró un token vigente, generando nuevo token... ::")
+        return None
+
     except Exception as e:
-        logging.error(f"Error al obtener el token: {str(e)}")
+        logging.error(f"❌ Error al obtener el token: {str(e)}")
         return None
 
 # **🔹 Test de conexión con AFIP**
