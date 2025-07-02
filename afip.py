@@ -2,12 +2,12 @@ import json
 import logging
 import os
 import xml.etree.ElementTree as ET
-from datetime import datetime, date
+from datetime import datetime, date, time
 import re
 import ssl
 from decimal import Decimal
 from idlelib import history
-
+from lxml import etree
 from requests import Session
 from SSLAdapter import SSLAdapter
 from utilidades import Utilidades as utils
@@ -59,6 +59,7 @@ class Afip():
         self.p12_password = os.getenv("P12_PASSWORD")
         self.sign = None
         self.id_usuario = 0
+        self.intentos = int(os.getenv("CANTIDAD_REINTENTOS", 5))
 
         # Estas dos variables definien si es homologacion o produccion y a que base se conecta
         self.plataforma = int(os.getenv("PLATAFORMA", 1))
@@ -70,54 +71,55 @@ class Afip():
 
     def login(self, id_usuario=0):
         logging.info("----------> :: app: login("+str(id_usuario)+") Autentica con AFIP utilizando los certificados :: <----------")
+        intentos = self.intentos
 
-        try:
-            # 🔹 Obtener el nuevo Token de Acceso
-            cms = afipClient.obtenerNuevoTokenAcceso(self.trust_store, self.keystore, self.endpoint_login)
-
+        for intento in range(1, intentos + 1):
             try:
-                # 🔹 Si la respuesta es un diccionario, devolverlo en formato JSON
-                if isinstance(cms, dict):
-                    logging.info(cms)
-                    return json.dumps(cms)  # Convertir el diccionario a JSON
+                # 🔹 Obtener el nuevo Token de Acceso
+                cms = afipClient.obtenerNuevoTokenAcceso(self.trust_store, self.keystore, self.endpoint_login)
 
-                elif isinstance(cms, requests.Response):
-                    cms = cms.text  # Si es una respuesta HTTP, extraer el contenido de texto
+                try:
+                    # 🔹 Si la respuesta es un diccionario, devolverlo en formato JSON
+                    if isinstance(cms, dict):
+                        logging.info(cms)
+                        return json.dumps(cms)  # Convertir el diccionario a JSON
 
-                if not isinstance(cms, str):
-                    logging.error({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
-                    return json.dumps({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
+                    elif isinstance(cms, requests.Response):
+                        cms = cms.text  # Si es una respuesta HTTP, extraer el contenido de texto
 
-                # 🔹 Parsear el XML si es válido
-                root = ET.fromstring(cms)
+                    if not isinstance(cms, str):
+                        logging.error({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
+                        return json.dumps({"control": "ERROR", "codigo" : "400", "mensaje": "Respuesta inesperada del servidor"})
 
-                # 🔹 Extraer datos del XML
-                data = {
-                    "control": "OK",
-                    "source": root.find(".//source").text if root.find(".//source") is not None else "N/A",
-                    "destination": root.find(".//destination").text if root.find(
-                        ".//destination") is not None else "N/A",
-                    "uniqueId": root.find(".//uniqueId").text if root.find(".//uniqueId") is not None else "N/A",
-                    "generationTime": root.find(".//generationTime").text if root.find(
-                        ".//generationTime") is not None else "N/A",
-                    "expirationTime": root.find(".//expirationTime").text if root.find(
-                        ".//expirationTime") is not None else "N/A",
-                    "token": root.find(".//token").text if root.find(".//token") is not None else "N/A",
-                    "sign": root.find(".//sign").text if root.find(".//sign") is not None else "N/A",
-                }
+                    # 🔹 Parsear el XML si es válido
+                    root = ET.fromstring(cms)
 
-                # 🔹 Guardar el token y devolver la respuesta en JSON
-                tok.grabarToken(self, id_usuario, data["source"], data["destination"], data["uniqueId"],
-                                data["generationTime"], data["expirationTime"], data["token"], data["sign"])
-                logging.info(data)
-                return json.dumps(data)  # Convertir el diccionario a JSON
-            except ET.ParseError as e:
-                logging.error("login(): "+str(e))
+                    # 🔹 Extraer datos del XML
+                    data = {
+                        "control": "OK",
+                        "source": root.find(".//source").text if root.find(".//source") is not None else "N/A",
+                        "destination": root.find(".//destination").text if root.find(
+                            ".//destination") is not None else "N/A",
+                        "uniqueId": root.find(".//uniqueId").text if root.find(".//uniqueId") is not None else "N/A",
+                        "generationTime": root.find(".//generationTime").text if root.find(
+                            ".//generationTime") is not None else "N/A",
+                        "expirationTime": root.find(".//expirationTime").text if root.find(
+                            ".//expirationTime") is not None else "N/A",
+                        "token": root.find(".//token").text if root.find(".//token") is not None else "N/A",
+                        "sign": root.find(".//sign").text if root.find(".//sign") is not None else "N/A",
+                    }
+
+                    # 🔹 Guardar el token y devolver la respuesta en JSON
+                    tok.grabarToken(self, id_usuario, data["source"], data["destination"], data["uniqueId"],
+                                    data["generationTime"], data["expirationTime"], data["token"], data["sign"])
+                    logging.info(data)
+                    return json.dumps(data)  # Convertir el diccionario a JSON
+                except ET.ParseError as e:
+                    logging.error("login(): "+str(e))
 
 
-        except Exception as e:
-            #logging.error(f"❌ Error autenticando con {self.nombre_entidad}: {str(e)}")
-            return json.dumps({"control": "ERROR", "mensaje": f"Error autenticando con {self.nombre_entidad}: {str(e)}"})
+            except Exception as e:
+                return json.dumps({"control": "ERROR", "mensaje": f"Error autenticando con {self.nombre_entidad}: {str(e)}"})
 
     def consultarComprobanteEmitido(self, id_usuario=0, cbteTipo=0, cbteNro=0, cbtePtoVta=0):
         logging.info(f":: consultarComprobanteEmitido({id_usuario}) ::")
@@ -131,62 +133,64 @@ class Afip():
         from facturacion_router import validarToken
         tok = validarToken(id_usuario)
         if tok["token"] is not None:
-            try:
-                metodo = "POST"
-                endPonintNombre = "FECompConsultar"
-                cuit_patron = r"CUIT (\d+)"
-                source = tok["source"]
-                cui = re.search(cuit_patron, source)
-                cuitCertificado = cui.group(1) if cui else 0
+            intentos = self.intentos
+            for intento in range(1, intentos + 1):
+                try:
+                    metodo = "POST"
+                    endPonintNombre = "FECompConsultar"
+                    cuit_patron = r"CUIT (\d+)"
+                    source = tok["source"]
+                    cui = re.search(cuit_patron, source)
+                    cuitCertificado = cui.group(1) if cui else 0
 
-                # Crear un contexto SSL personalizado
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                ssl_context.set_ciphers("DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
-                # Configurar la sesión de requests
-                session = Session()
-                session.verify = False  # Evita errores de certificado en entorno de prueba
-                session.mount("https://", SSLAdapter(ssl_context=ssl_context))
-                session.headers.update({
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "SOAPAction": '"FECompConsultar"'
-                })
+                    # Crear un contexto SSL personalizado
+                    ssl_context = ssl.create_default_context()
+                    ssl_context.check_hostname = False
+                    ssl_context.verify_mode = ssl.CERT_NONE
+                    ssl_context.set_ciphers("DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
+                    # Configurar la sesión de requests
+                    session = Session()
+                    session.verify = False  # Evita errores de certificado en entorno de prueba
+                    session.mount("https://", SSLAdapter(ssl_context=ssl_context))
+                    session.headers.update({
+                        "Content-Type": "application/xml; charset=utf-8",
+                        "SOAPAction": '"FECompConsultar"'
+                    })
 
-                # Crear el transporte con la sesión configurada
-                transport = Transport(session=session)
-                # Datos de autenticación
-                auth = {
-                    "Token": tok["token"],
-                    "Sign": tok["sign"],
-                    "Cuit": self.cuit
-                }
-                # Datos del comprobante a consultar 1, 5927, 2
-                fe_comp_cons_req = {
-                    "CbteTipo": cbteTipo,
-                    "CbteNro": cbteNro,
-                    "PtoVta": cbtePtoVta
-                }
+                    # Crear el transporte con la sesión configurada
+                    transport = Transport(session=session)
+                    # Datos de autenticación
+                    auth = {
+                        "Token": tok["token"],
+                        "Sign": tok["sign"],
+                        "Cuit": self.cuit
+                    }
+                    # Datos del comprobante a consultar 1, 5927, 2
+                    fe_comp_cons_req = {
+                        "CbteTipo": cbteTipo,
+                        "CbteNro": cbteNro,
+                        "PtoVta": cbtePtoVta
+                    }
 
-                # Crear cliente SOAP
-                client = Client(self.endpoint_fe + "?wsdl", transport=transport)
+                    # Crear cliente SOAP
+                    client = Client(self.endpoint_fe + "?wsdl", transport=transport)
 
-                # Enviar datos a AFIP
-                response = client.service.FECompConsultar(Auth=auth, FeCompConsReq=fe_comp_cons_req)
-                # Manejar la respuesta
+                    # Enviar datos a AFIP
+                    response = client.service.FECompConsultar(Auth=auth, FeCompConsReq=fe_comp_cons_req)
+                    # Manejar la respuesta
 
-                if hasattr(response, "Errors") and response.Errors:
-                    #grabar en sybaase el error en "afipws_fe_errores_log" solo en
-                    if self.plataforma == 2:
-                        self.grabarRespuestaARCA(2, id_usuario, response.Code, endPonintNombre, response.Errors, "E")
-                    logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
-                    return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
-                else:
-                    logging.info(response)
-                    return response
-            except Exception as e:
-                logging.error(f"❌ Error al consultar comprobante emitido: {str(e)}")
-                return {"control": "ERROR", "mensaje": f"Error al consultar comprobante emitido: {str(e)}"}
+                    if hasattr(response, "Errors") and response.Errors:
+                        #grabar en sybaase el error en "afipws_fe_errores_log" solo en
+                        if self.plataforma == 2:
+                            self.grabarRespuestaARCA(2, id_usuario, response.Code, endPonintNombre, response.Errors, "E")
+                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
+                    else:
+                        logging.info(response)
+                        return response
+                except Exception as e:
+                    logging.error(f"❌ Error al consultar comprobante emitido: {str(e)}")
+                    return {"control": "ERROR", "mensaje": f"Error al consultar comprobante emitido: {str(e)}"}
         else:
             logging.error("❌ Token no válido o no disponible.")
             return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
@@ -204,63 +208,64 @@ class Afip():
 
         from facturacion_router import validarToken
         tok = validarToken(id_usuario)
+        intentos = self.intentos
+        for intento in range(1, intentos + 1):
+            if tok["token"] is not None:
+                try:
+                    metodo = "POST"
+                    endPonintNombre = "FECompUltimoAutorizado"
+                    cuit_patron = r"CUIT (\d+)"
+                    source = tok["source"]
+                    cui = re.search(cuit_patron, source)
+                    cuitCertificado = cui.group(1) if cui else 0
 
-        if tok["token"] is not None:
-            try:
-                metodo = "POST"
-                endPonintNombre = "FECompUltimoAutorizado"
-                cuit_patron = r"CUIT (\d+)"
-                source = tok["source"]
-                cui = re.search(cuit_patron, source)
-                cuitCertificado = cui.group(1) if cui else 0
+                    # Crear un contexto SSL personalizado
+                    ssl_context = ssl.create_default_context()
+                    ssl_context.check_hostname = False  # Deshabilitar la verificación del nombre del host
+                    ssl_context.verify_mode = ssl.CERT_NONE  # No verificar certificados
+                    ssl_context.set_ciphers(
+                        "DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
+                    # Configurar la sesión de requests
+                    session = Session()
+                    session.verify = False  # Evita errores de certificado en entorno de prueba
+                    session.mount("https://", SSLAdapter(ssl_context=ssl_context))
+                    session.headers.update({
+                        "Content-Type": "application/xml; charset=utf-8",
+                        "SOAPAction": '"FECompUltimoAutorizado"'
+                    })
 
-                # Crear un contexto SSL personalizado
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False  # Deshabilitar la verificación del nombre del host
-                ssl_context.verify_mode = ssl.CERT_NONE  # No verificar certificados
-                ssl_context.set_ciphers(
-                    "DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
-                # Configurar la sesión de requests
-                session = Session()
-                session.verify = False  # Evita errores de certificado en entorno de prueba
-                session.mount("https://", SSLAdapter(ssl_context=ssl_context))
-                session.headers.update({
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "SOAPAction": '"FECompUltimoAutorizado"'
-                })
+                    # Crear el transporte con la sesión configurada
+                    transport = Transport(session=session)
+                    # Datos de autenticación
+                    auth = {
+                        "Token": tok["token"],
+                        "Sign": tok["sign"],
+                        "Cuit": self.cuit
+                    }
+                    ptoVta =  ptoVta
+                    cbteTipo =cbteTipo
 
-                # Crear el transporte con la sesión configurada
-                transport = Transport(session=session)
-                # Datos de autenticación
-                auth = {
-                    "Token": tok["token"],
-                    "Sign": tok["sign"],
-                    "Cuit": self.cuit
-                }
-                ptoVta =  ptoVta
-                cbteTipo =cbteTipo
+                    # Datos del comprobante a consultar
+                    # Crear cliente SOAP
+                    client = Client(self.endpoint_fe + "?wsdl", transport=transport)
 
-                # Datos del comprobante a consultar
-                # Crear cliente SOAP
-                client = Client(self.endpoint_fe + "?wsdl", transport=transport)
+                    # Enviar datos a AFIP
+                    response = client.service.FECompUltimoAutorizado(Auth=auth, PtoVta=ptoVta, CbteTipo=cbteTipo)
 
-                # Enviar datos a AFIP
-                response = client.service.FECompUltimoAutorizado(Auth=auth, PtoVta=ptoVta, CbteTipo=cbteTipo)
+                    # Manejar la respuesta
+                    if hasattr(response, "Errors") and response.Errors:
+                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
+                    else:
+                        logging.info("✅ "+str(endPonintNombre)+": Solicitud enviada correctamente.")
+                        return response
 
-                # Manejar la respuesta
-                if hasattr(response, "Errors") and response.Errors:
-                    logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
-                    return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
-                else:
-                    logging.info("✅ "+str(endPonintNombre)+": Solicitud enviada correctamente.")
-                    return response
-
-            except Exception as e:
-                logging.error(f"❌ "+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}")
-                return {"control": "ERROR", "mensaje": f""+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}"}
-        else:
-            logging.error("❌ Token no válido o no disponible.")
-            return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
+                except Exception as e:
+                    logging.error(f"❌ "+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}")
+                    return {"control": "ERROR", "mensaje": f""+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}"}
+            else:
+                logging.error("❌ Token no válido o no disponible.")
+                return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
 
 
 
@@ -275,54 +280,57 @@ class Afip():
         tok = validarToken(id_usuario)
 
         if tok["token"] is not None:
-            try:
-                metodo = "POST"
-                endPointNombre = "FEParamGetPtosVenta"
-                cuit_patron = r"CUIT (\d+)"
-                source = tok["source"]
-                cui = re.search(cuit_patron, source)
-                cuitCertificado = cui.group(1) if cui else 0
+            intentos = self.intentos
+            for intento in range(1, intentos + 1):
+                try:
+                    metodo = "POST"
+                    endPointNombre = "FEParamGetPtosVenta"
+                    cuit_patron = r"CUIT (\d+)"
+                    source = tok["source"]
+                    cui = re.search(cuit_patron, source)
+                    cuitCertificado = cui.group(1) if cui else 0
 
-                # Crear un contexto SSL personalizado
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False  # Deshabilitar la verificación del nombre del host
-                ssl_context.verify_mode = ssl.CERT_NONE  # No verificar certificados
-                ssl_context.set_ciphers(
-                    "DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
-                # Configurar la sesión de requests
-                session = Session()
-                session.verify = False  # Evita errores de certificado en entorno de prueba
-                session.mount("https://", SSLAdapter(ssl_context=ssl_context))
-                session.headers.update({
-                    "Content-Type": "application/xml; charset=utf-8",
-                    "SOAPAction": '"FEParamGetPtosVenta"'
-                })
+                    # Crear un contexto SSL personalizado
+                    ssl_context = ssl.create_default_context()
+                    ssl_context.check_hostname = False  # Deshabilitar la verificación del nombre del host
+                    ssl_context.verify_mode = ssl.CERT_NONE  # No verificar certificados
+                    ssl_context.set_ciphers(
+                        "DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad para aceptar claves DH pequeñas
+                    # Configurar la sesión de requests
+                    session = Session()
+                    session.verify = False  # Evita errores de certificado en entorno de prueba
+                    session.mount("https://", SSLAdapter(ssl_context=ssl_context))
+                    session.headers.update({
+                        "Content-Type": "application/xml; charset=utf-8",
+                        "SOAPAction": '"FEParamGetPtosVenta"'
+                    })
 
-                # Crear el transporte con la sesión configurada
-                transport = Transport(session=session)
-                # Datos de autenticación
-                auth = {
-                    "Token": tok["token"],
-                    "Sign": tok["sign"],
-                    "Cuit": self.cuit
-                }
-                # Datos del comprobante a consultar
-                # Crear cliente SOAP
-                client = Client(self.endpoint_fe + "?wsdl", transport=transport)
+                    # Crear el transporte con la sesión configurada
+                    transport = Transport(session=session)
+                    # Datos de autenticación
+                    auth = {
+                        "Token": tok["token"],
+                        "Sign": tok["sign"],
+                        "Cuit": self.cuit
+                    }
+                    # Datos del comprobante a consultar
+                    # Crear cliente SOAP
+                    client = Client(self.endpoint_fe + "?wsdl", transport=transport)
 
-                # Enviar datos a AFIP
-                response = client.service.FEParamGetPtosVenta(Auth=auth)
+                    # Enviar datos a AFIP
+                    response = client.service.FEParamGetPtosVenta(Auth=auth)
 
-                # Manejar la respuesta
-                if hasattr(response, "Errors") and response.Errors:
-                    logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
-                    return {"control": "ERROR", "codigo": "400","mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
-                else:
-                    logging.info("✅ "+str(endPointNombre)+": Solicitud enviada correctamente.")
-                    return response
-            except Exception as e:
-                logging.error(f"❌ "+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifique...: {str(e)}")
-                return {"control": "ERROR", "codigo": "400", "mensaje": f""+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifiqueo: {str(e)}"}
+                    # Manejar la respuesta
+                    if hasattr(response, "Errors") and response.Errors:
+                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        return {"control": "ERROR", "codigo": "400","mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
+                    else:
+                        logging.info("✅ "+str(endPointNombre)+": Solicitud enviada correctamente.")
+                        return response
+                except Exception as e:
+                    logging.error(f"❌ "+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifique...: {str(e)}")
+                    return {"control": "ERROR", "codigo": "400", "mensaje": f""+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifiqueo: {str(e)}"}
+
         else:
             logging.error("❌ Token no válido o no disponible.")
             return {"control": "ERROR", "codigo": "400", "mensaje": "Token no válido o no disponible."}
@@ -406,121 +414,123 @@ class Afip():
                 nuevoNroComprobante = int(ultimo["CbteNro"])+1
 
                 # Crear el transporte con la sesión configurada
-                transport = Transport(session=session)
-                client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", transport=transport)
 
-                try:
-                    # Configurar autenticación
-                    #if comprobante is not None:
+                intentos = self.intentos
+                for intento in range(1, intentos + 1):
+                    transport = Transport(session=session)
+                    client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", transport=transport)
 
-                        FECAEDetRequestType = client.get_type("ns0:FECAEDetRequest")
-                        FECAECabRequestType = client.get_type("ns0:FECAECabRequest")
+                    try:
+                        # Configurar autenticación
+                        #if comprobante is not None:
 
-                        auth = {
-                            "Token": tok["token"],
-                            "Sign": tok["sign"],
-                            "Cuit": self.cuit
-                        }
+                            FECAEDetRequestType = client.get_type("ns0:FECAEDetRequest")
+                            FECAECabRequestType = client.get_type("ns0:FECAECabRequest")
 
-                        # Crear la cabecera del comprobante
+                            auth = {
+                                "Token": tok["token"],
+                                "Sign": tok["sign"],
+                                "Cuit": self.cuit
+                            }
 
-                        fe_cab_req = [
-                            FECAECabRequestType(
-                                CantReg = cantidad,
-                                PtoVta= 1,#punto_venta,
-                                CbteTipo = tipo_comp
+                            # Crear la cabecera del comprobante
 
-                            )
-                        ]
-                        # Crear el detalle del comprobante
+                            fe_cab_req = [
+                                FECAECabRequestType(
+                                    CantReg = cantidad,
+                                    PtoVta= 1,#punto_venta,
+                                    CbteTipo = tipo_comp
+                                )
+                            ]
+                            # Crear el detalle del comprobante
 
 
 
-                        print(":: DETALLE DEL COMPROBANTE ::")
-                        print("Concepto: "+str(detalle["Concepto"]))
-                        print("DocTipo: " + str(detalle["DocTipo"]))
-                        print("DocNro: " + str(detalle["DocNro"]))
-                        print("CbteDesde: " + str(detalle["CbteDesde"]))
-                        print("CbteHasta: " + str(detalle["CbteHasta"]))
-                        print("CbteFch: " + str(detalle["CbteFch"]))
-                        print("ImpTotal: " + str(detalle["ImpTotal"]))
-                        print("ImpTotConc: " + str(detalle["ImpTotConc"]))
-                        print("ImpNeto: " + str(detalle["ImpNeto"]))
-                        print("ImpOpEx: " + str(detalle["ImpOpEx"]))
-                        print("ImpTrib: " + str(detalle["ImpTrib"]))
-                        print("ImpIVA: " + str(detalle["ImpIVA"]))
-                        print("MonId: " + str(detalle["MonId"]))
-                        print("MonCotiz: " + str(detalle["MonCotiz"]))
-                        print("FchServDesde: " + str(detalle["FchServDesde"]))
-                        print("FchServHasta: " + str(detalle["FchServHasta"]))
+                            print(":: DETALLE DEL COMPROBANTE ::")
+                            print("Concepto: "+str(detalle["Concepto"]))
+                            print("DocTipo: " + str(detalle["DocTipo"]))
+                            print("DocNro: " + str(detalle["DocNro"]))
+                            print("CbteDesde: " + str(detalle["CbteDesde"]))
+                            print("CbteHasta: " + str(detalle["CbteHasta"]))
+                            print("CbteFch: " + str(detalle["CbteFch"]))
+                            print("ImpTotal: " + str(detalle["ImpTotal"]))
+                            print("ImpTotConc: " + str(detalle["ImpTotConc"]))
+                            print("ImpNeto: " + str(detalle["ImpNeto"]))
+                            print("ImpOpEx: " + str(detalle["ImpOpEx"]))
+                            print("ImpTrib: " + str(detalle["ImpTrib"]))
+                            print("ImpIVA: " + str(detalle["ImpIVA"]))
+                            print("MonId: " + str(detalle["MonId"]))
+                            print("MonCotiz: " + str(detalle["MonCotiz"]))
+                            print("FchServDesde: " + str(detalle["FchServDesde"]))
+                            print("FchServHasta: " + str(detalle["FchServHasta"]))
 
-                        print("CondicionIVAReceptorId: " + str(detalle["CondicionIVAReceptorId"]))
-                        print("FchVtoPago: " + str(detalle["FchVtoPago"]))
-                        print("NumeroComprobanteArca: "+ str(detalle["NumeroComprobanteArca"]))
-                        print("Iva: " + str(detalle["Iva"]))
-                        print("Tributos: " + str(detalle["Tributos"]))
-                        print("Opcionales: " + str(detalle["Opcionales"]))
-                        print("PeriodoAsoc: " + str(detalle["PeriodoAsoc"]))
-
-                        if detalle["Tributos"] is not None:
+                            print("CondicionIVAReceptorId: " + str(detalle["CondicionIVAReceptorId"]))
+                            print("FchVtoPago: " + str(detalle["FchVtoPago"]))
+                            print("NumeroComprobanteArca: "+ str(detalle["NumeroComprobanteArca"]))
+                            print("Iva: " + str(detalle["Iva"]))
                             print("Tributos: " + str(detalle["Tributos"]))
-                        if detalle["CbtesAsoc"] is not None:
-                            print("CbtesAsoc: " + str(detalle["CbtesAsoc"]))
-                        if detalle["Opcionales"] is not None:
                             print("Opcionales: " + str(detalle["Opcionales"]))
-                        print("::::::::::::::::::::::::::::::::::::::::::::::::::::")
+                            print("PeriodoAsoc: " + str(detalle["PeriodoAsoc"]))
+
+                            if detalle["Tributos"] is not None:
+                                print("Tributos: " + str(detalle["Tributos"]))
+                            if detalle["CbtesAsoc"] is not None:
+                                print("CbtesAsoc: " + str(detalle["CbtesAsoc"]))
+                            if detalle["Opcionales"] is not None:
+                                print("Opcionales: " + str(detalle["Opcionales"]))
+                            print("::::::::::::::::::::::::::::::::::::::::::::::::::::")
 
 
 
 
-                        fe_det_req = [
-                            FECAEDetRequestType(
-                                Concepto=detalle["Concepto"],  # Concepto: 1-Productos, 2-Servicios, 3-Productos y Servicios
-                                DocTipo=detalle["DocTipo"],  # Tipo de documento: 96-DNI
-                                DocNro=detalle["DocNro"],  # Número de documento
-                                CbteDesde=nuevoNroComprobante,  # Número de comprobante desde
-                                CbteHasta=nuevoNroComprobante,  # Número de comprobante hasta
-                                CbteFch=detalle["CbteFch"],  # Fecha del comprobante (YYYYMMDD)
-                                ImpTotal=detalle["ImpTotal"],  # Importe total
-                                ImpTotConc=detalle["ImpTotConc"],  # Importe no gravado
-                                ImpNeto=detalle["ImpNeto"],  # Importe neto gravado
-                                ImpOpEx=detalle["ImpOpEx"],  # Importe exento
-                                ImpTrib=detalle["ImpTrib"],  # Importe de tributos
-                                ImpIVA=detalle["ImpIVA"],  # Importe de IVA
-                                MonId=detalle["MonId"],  # Moneda (PES para pesos argentinos)
-                                MonCotiz=detalle["MonCotiz"],
-                                #CanMisMonExt = detalle["CanMisMonExt"],
-                                FchServDesde= detalle["FchServDesde"],
-                                FchServHasta= detalle["FchServHasta"],
-                                CondicionIVAReceptorId=detalle["CondicionIVAReceptorId"],
-                                FchVtoPago=detalle["FchVtoPago"],
-                                Tributos=detalle["Tributos"],
-                                Iva=detalle["Iva"],
-                                CbtesAsoc= detalle["CbtesAsoc"],
-                                Opcionales =  detalle["Opcionales"],
-                                Compradores = None,
-                                PeriodoAsoc = detalle["PeriodoAsoc"],
-                                Actividades = None
-                            )
-                        ]
+                            fe_det_req = [
+                                FECAEDetRequestType(
+                                    Concepto=detalle["Concepto"],  # Concepto: 1-Productos, 2-Servicios, 3-Productos y Servicios
+                                    DocTipo=detalle["DocTipo"],  # Tipo de documento: 96-DNI
+                                    DocNro=detalle["DocNro"],  # Número de documento
+                                    CbteDesde=nuevoNroComprobante,  # Número de comprobante desde
+                                    CbteHasta=nuevoNroComprobante,  # Número de comprobante hasta
+                                    CbteFch=detalle["CbteFch"],  # Fecha del comprobante (YYYYMMDD)
+                                    ImpTotal=detalle["ImpTotal"],  # Importe total
+                                    ImpTotConc=detalle["ImpTotConc"],  # Importe no gravado
+                                    ImpNeto=detalle["ImpNeto"],  # Importe neto gravado
+                                    ImpOpEx=detalle["ImpOpEx"],  # Importe exento
+                                    ImpTrib=detalle["ImpTrib"],  # Importe de tributos
+                                    ImpIVA=detalle["ImpIVA"],  # Importe de IVA
+                                    MonId=detalle["MonId"],  # Moneda (PES para pesos argentinos)
+                                    MonCotiz=detalle["MonCotiz"],
+                                    #CanMisMonExt = detalle["CanMisMonExt"],
+                                    FchServDesde= detalle["FchServDesde"],
+                                    FchServHasta= detalle["FchServHasta"],
+                                    CondicionIVAReceptorId=detalle["CondicionIVAReceptorId"],
+                                    FchVtoPago=detalle["FchVtoPago"],
+                                    Tributos=detalle["Tributos"],
+                                    Iva=detalle["Iva"],
+                                    CbtesAsoc= detalle["CbtesAsoc"],
+                                    Opcionales =  detalle["Opcionales"],
+                                    Compradores = None,
+                                    PeriodoAsoc = detalle["PeriodoAsoc"],
+                                    Actividades = None
+                                )
+                            ]
 
 
-                        # Construir la solicitud
-                        fe_cae_req = {
-                            "FeCabReq": fe_cab_req[0],
-                            "FeDetReq": {"FECAEDetRequest": fe_det_req}
-                        }
+                            # Construir la solicitud
+                            fe_cae_req = {
+                                "FeCabReq": fe_cab_req[0],
+                                "FeDetReq": {"FECAEDetRequest": fe_det_req}
+                            }
 
-                        # Enviar la solicitud
+                            # Enviar la solicitud
 
-                        response = client.service.FECAESolicitar(Auth=auth, FeCAEReq=fe_cae_req)
-                        if self.plataforma == 1:
-                            self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, idFactCab)
-                        else:
-                            self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
+                            response = client.service.FECAESolicitar(Auth=auth, FeCAEReq=fe_cae_req)
+                            if self.plataforma == 1:
+                                self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, idFactCab)
+                            else:
+                                self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
 
-                except Exception as e:
-                    return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante)
+                    except Exception as e:
+                        return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante)
 
             except Exception as e:
 
@@ -529,7 +539,9 @@ class Afip():
 
 
     def reautorizarComprobante(self, id_usuario, comprobante=None):
-        print(":: REAUTORIZAR COMPROBANTE ::")
+        intentos = self.intentos
+        for intento in range(1, intentos + 1):
+            print(":: REAUTORIZAR COMPROBANTE ::")
 
     def autorizarComprobanteRespuesta(self, id_usuario, respuesta, comprobante=None, nro_comp_interno=0):
         try:
@@ -1199,51 +1211,63 @@ class Afip():
         nro =  f"{int(pto_vta):04d}{int(nro_comprobante):08d}"
         return str(nro)
 
-
-
-
-
-
-
     def validarConexion(self):
-        """Valida la conexión con el servicio de AFIP"""
-        try:
-            logging.info("Validando conexión con el servicio de AFIP...")
-            endPointNombre = "FEDummy"
-            # Realiza una solicitud HEAD para verificar si el endpoint está accesible
-            #response = requests.get(self.endpoint_dummy, timeout=5)
-            client = zeep.Client(wsdl=self.endpoint_fe)
-            response = client.service.FEDummy()
-            if response.AppServer == "OK" and response.DbServer == "OK" and response.AuthServer == "OK" :
-                msg = f"La conexión con {self.nombre_entidad} se realizó exitosamente."
-                codigo = 200
-                control = "OK"
-            else:
-                msg = f"Problema en la conexión con {self.nombre_entidad}. Servidores: {response}"
-                logging.warning(msg)
-                codigo = 500
-                control = "ERROR"
+        """Valida la conexión con el servicio de AFIP y muestra el XML puro"""
+        intentos = self.intentos
+        for intento in range(1, intentos + 1):
+            try:
+                logging.info("Validando conexión con el servicio de AFIP...")
+                plugin = self.get_zeep_logging_plugin()
+                client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", plugins=[plugin])
+                response = client.service.FEDummy()
+                if response.AppServer == "OK" and response.DbServer == "OK" and response.AuthServer == "OK":
+                    msg = f"La conexión con {self.nombre_entidad} se realizó exitosamente tras intentar "+str(intento)+" vez de "+str(self.intentos)+" intentos."
+                    codigo = 200
+                    control = "OK"
+                else:
+                    msg = f"Problema en la conexión con {self.nombre_entidad}. Servidores: {response} "+", intento: " + str(intento)
+                    logging.warning(msg)
+                    codigo = 500
+                    control = "ERROR"
 
-            resp_json = {
-                "control": control,
-                "codigo": codigo,
-                "mensaje": msg,
-                "servidores": {
-                    "AppServer": response.AppServer,
-                    "DbServer": response.DbServer,
-                    "AuthServer": response.AuthServer
+                resp_json = {
+                    "control": control,
+                    "codigo": codigo,
+                    "mensaje": msg,
+                    "servidores": {
+                        "AppServer": response.AppServer,
+                        "DbServer": response.DbServer,
+                        "AuthServer": response.AuthServer
+                    }
                 }
-            }
-            logging.info(json.dumps(resp_json, ensure_ascii=False,indent=4))
-            return resp_json
+                logging.info(json.dumps(resp_json, ensure_ascii=False, indent=4))
+                return resp_json
 
-        except requests.exceptions.RequestException as e:
-            logging.error(f"Error al conectar con AFIP: {e}")
-            return {"control": "ERROR", "mensaje": f"Error al conectar con AFIP: {str(e)}"}
+            except requests.exceptions.RequestException as e:
+                logging.error(f"Error al conectar con AFIP (intento {intento}): {e}")
+                if intento < intentos:
+                    time.sleep(2)  # Espera 2 segundos antes de reintentar
+                else:
+                    return {"control": "ERROR",
+                            "mensaje": f"Error al conectar con AFIP tras {intentos} intentos: {str(e)}"}
 
 
 
 
+    def get_zeep_logging_plugin(self):
+        from zeep import Plugin
+        class LoggingPlugin(Plugin):
+            def egress(self, envelope, http_headers, operation, binding_options):
+                print("===== REQUEST XML =====")
+                print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
+                return envelope, http_headers
+
+            def ingress(self, envelope, http_headers, operation):
+                print("===== RESPONSE XML =====")
+                print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
+                return envelope, http_headers
+
+        return LoggingPlugin()
 
 
 
@@ -1356,11 +1380,12 @@ class Afip():
         fecha = datetime.strptime(fechaTemp, "%Y-%m-%d").strftime("%Y%m%d")
         nro_comprobante = comprobante["idFactCab"]
         nro_fac_cab_asoc = comprobante["idFactCabRelacionado"]
+        #debo buscar el punto de venta por el idFactCab y el tipo de comprobante
         pto_venta = comprobante["cbtePtoVta"]
         tipo_comprobante = comprobante["cbteTipo"]
 
 
-        if not all([nro_comprobante, id_usuario, pto_venta, tipo_comprobante]):
+        if not all([nro_comprobante, id_usuario]):
             logging.error("Error: Uno o más campos requeridos no tienen un valor válido.")
             return None
 

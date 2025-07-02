@@ -11,13 +11,13 @@ class AppFacturacionElectronica():
         super().__init__()
         self.app = Flask(__name__)
         CORS(self.app)
-        self.app.register_blueprint(facturacion_bp, url_prefix='/api')
+        self.app.register_blueprint(facturacion_bp, url_prefix='/api/facturacion-electronica')
 
-    def run(self, debug=True, host="0.0.0.0", port=5000):
+    def run(self, debug=True, host="0.0.0.0", port=5050):
         self.app.run(debug=True, host=host, port=port)
 
 # **🚀 Ejecutar el servidor Flask**
-"""
+
 if __name__ == "__main__":
     facturacionApp = AppFacturacionElectronica()
     try:
@@ -25,6 +25,7 @@ if __name__ == "__main__":
             facturacionApp.run(debug=True, port=5050)
     except Exception as e:
         logging.error(f"Error al iniciar el servicio: {e}")
+
 """
 if __name__ == "__main__":
     facturacionApp = AppFacturacionElectronica()
@@ -77,3 +78,4 @@ if __name__ == "__main__":
             #ogging.info(f"result: {dummy}")
     except Exception as e:
         logging.error(f"Error al iniciar el servicio: {e}")
+"""
