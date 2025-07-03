@@ -26,6 +26,8 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"Error al iniciar el servicio: {e}")
 
+
+
 """
 if __name__ == "__main__":
     facturacionApp = AppFacturacionElectronica()
@@ -39,18 +41,6 @@ if __name__ == "__main__":
                 "cbteFch": "2025-05-30",
             }
 
-            # idFactCab = 2829 , es la factura que se autorizo
-            # idFactCab = 2830, es la nota de credito con la cual se debe anular la factura (2829
-            parametros = {
-                "idFactCab": 2830,
-                "idFactCabRelacionado":2829,
-                "cbtePtoVta" : 1,
-                "cbteTipo" : 3,
-                "cbteFch": "2025-06-18",
-
-            }
-
-            # Convertir el string JSON en un diccionario Python
 
 
 
@@ -58,7 +48,7 @@ if __name__ == "__main__":
                 #autorizarComprobante(62, parametros)
                 #logging.info(f"result: {autorizarSybase}")
 
-                #autorizar = autorizarComprobante(63, parametros)
+                autorizar = autorizarComprobante(True)
                 #logging.info(f"result: {autorizar}")
                 comprobanteConsulta = {
                     "CbteTipo": 3,
@@ -66,7 +56,7 @@ if __name__ == "__main__":
                     "PtoVta": 1,
                 }
 
-                consultarComprobante = consultarComprobanteEmitido(62, comprobanteConsulta)
+                #consultarComprobante = consultarComprobanteEmitido(62, comprobanteConsulta)
                 #logging.info(f"result: {consultarUltimoAutorizado}")
             except Exception as e:
                 logging.error(f"Error general: {e}")

@@ -12,7 +12,7 @@ class DBConnection:
         self.password = "root"
         self.port = "3306"
         self.conn = self.create_connection()
-        print("✅ Conexión establecida con éxito.")
+        #print("✅ Conexión establecida con éxito.")
 
     def create_connection(self):
         try:

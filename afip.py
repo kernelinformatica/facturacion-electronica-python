@@ -19,7 +19,9 @@ from zeep import Client
 from zeep.transports import Transport
 from tokens import Tokens as tok
 import requests
+import requests
 from dotenv import load_dotenv
+import time
 from afipWsaaClient import AfipWsaaClient as afipClient
 
 # Crear un contexto SSL personalizado que permita claves DH pequeñas
@@ -28,7 +30,7 @@ ssl_context.set_ciphers("DEFAULT:@SECLEVEL=1")  # Reducir el nivel de seguridad 
 
 # Configurar el registro de depuración
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger("zeep").setLevel(logging.DEBUG)
+#logging.getLogger("zeep").setLevel(logging.DEBUG)
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -134,8 +136,8 @@ class Afip():
         tok = validarToken(id_usuario)
         if tok["token"] is not None:
             intentos = self.intentos
-            for intento in range(1, intentos + 1):
-                try:
+            #for intento in range(1, intentos + 1):
+            try:
                     metodo = "POST"
                     endPonintNombre = "FECompConsultar"
                     cuit_patron = r"CUIT (\d+)"
@@ -183,14 +185,14 @@ class Afip():
                         #grabar en sybaase el error en "afipws_fe_errores_log" solo en
                         if self.plataforma == 2:
                             self.grabarRespuestaARCA(2, id_usuario, response.Code, endPonintNombre, response.Errors, "E")
-                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        logging.error(f"❌ consultarComprobanteEmitido: Error en la respuesta de AFIP: {response.Errors}")
                         return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
                     else:
                         logging.info(response)
                         return response
-                except Exception as e:
-                    logging.error(f"❌ Error al consultar comprobante emitido: {str(e)}")
-                    return {"control": "ERROR", "mensaje": f"Error al consultar comprobante emitido: {str(e)}"}
+            except Exception as e:
+               logging.error(f"❌ Error al consultar comprobante emitido: {str(e)}")
+               return {"control": "ERROR", "mensaje": f"Error al consultar comprobante emitido: {str(e)}"}
         else:
             logging.error("❌ Token no válido o no disponible.")
             return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
@@ -209,8 +211,8 @@ class Afip():
         from facturacion_router import validarToken
         tok = validarToken(id_usuario)
         intentos = self.intentos
-        for intento in range(1, intentos + 1):
-            if tok["token"] is not None:
+        #for intento in range(1, intentos + 1):
+        if tok["token"] is not None:
                 try:
                     metodo = "POST"
                     endPonintNombre = "FECompUltimoAutorizado"
@@ -254,18 +256,18 @@ class Afip():
 
                     # Manejar la respuesta
                     if hasattr(response, "Errors") and response.Errors:
-                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        logging.error(f"❌  ultimoComprobanteAutorizado: Error en la respuesta de AFIP : {response.Errors}")
                         return {"control": "ERROR", "mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
                     else:
-                        logging.info("✅ "+str(endPonintNombre)+": Solicitud enviada correctamente.")
+                        logging.info("✅ ultimoComprobanteAutorizado: Solicitud enviada correctamente.")
                         return response
 
                 except Exception as e:
                     logging.error(f"❌ "+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}")
                     return {"control": "ERROR", "mensaje": f""+str(endPonintNombre)+": Error al consultar último autorizado: {str(e)}"}
-            else:
-                logging.error("❌ Token no válido o no disponible.")
-                return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
+        else:
+            logging.error("❌ Token no válido o no disponible.")
+            return {"control": "ERROR", "mensaje": "Token no válido o no disponible."}
 
 
 
@@ -281,8 +283,8 @@ class Afip():
 
         if tok["token"] is not None:
             intentos = self.intentos
-            for intento in range(1, intentos + 1):
-                try:
+            #for intento in range(1, intentos + 1):
+            try:
                     metodo = "POST"
                     endPointNombre = "FEParamGetPtosVenta"
                     cuit_patron = r"CUIT (\d+)"
@@ -322,12 +324,12 @@ class Afip():
 
                     # Manejar la respuesta
                     if hasattr(response, "Errors") and response.Errors:
-                        logging.error(f"❌ Error en la respuesta de AFIP: {response.Errors}")
+                        logging.error(f"❌ consultarPuntosventa: Error en la respuesta de AFIP: {response.Errors}")
                         return {"control": "ERROR", "codigo": "400","mensaje": f"Error en respuesta de AFIP: {response.Errors}"}
                     else:
                         logging.info("✅ "+str(endPointNombre)+": Solicitud enviada correctamente.")
                         return response
-                except Exception as e:
+            except Exception as e:
                     logging.error(f"❌ "+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifique...: {str(e)}")
                     return {"control": "ERROR", "codigo": "400", "mensaje": f""+str(endPointNombre)+": Error al consultar los puntos de venta habilitados, puede que no tenga dados de alta puntos de venta, verifiqueo: {str(e)}"}
 
@@ -371,7 +373,8 @@ class Afip():
         if tok["token"] is not None:
             try:
                 if not tok["token"] or not tok["sign"]:
-                    raise Exception("No estás autenticado. Llama al método `autenticar` primero.")
+                    self.login(id_usuario)
+
                 # Busco el ultimo comprobante autorizado:
                 comprobante_dict = json.loads(comprobante)
                 cabecera = comprobante_dict.get("FeCabReq", {})
@@ -380,14 +383,12 @@ class Afip():
                 tipo_comp =  cabecera["CbteTipo"]
                 cantidad = cabecera["CantReg"]
                 ultimo = self.ultimoComprobanteAutorizado(id_usuario, punto_venta, tipo_comp)
-                if ultimo["CbteNro"] is None:
+                if hasattr(ultimo, "control") and ultimo.control == "ERROR":
                     if self.plataforma == 2:
                         #self, destino, id_usuario, errorCodigo, metodo,  errorMsg, params=None
                         self.grabarRespuestaARCA(2, id_usuario, ultimo["Code"], "FECompUltimoAutorizado", ultimo["Errors"], "U")
                         logging.error("Error: "+str(ultimo["Code"])+", Error: "+str(ultimo["Errors"]))
-                    return {"control": "ERROR", "codigo": "400", "mensaje": f"Error no se encontró el último comprobante autorizado: {ultimo['Errors']}"}
-                    raise Exception("No se encontró el último comprobante autorizado con el tipo de comprobante"+str(datos_factura["tipoComprobante"])+" y punto de venta: "+str(datos_factura["ptoVenta"])+".")
-                metodo = "POST"
+                    return ultimo
                 endPointNombre = "FECAESolicitar"
                 cuit_patron = r"CUIT (\d+)"
                 source = tok["source"]
@@ -416,11 +417,11 @@ class Afip():
                 # Crear el transporte con la sesión configurada
 
                 intentos = self.intentos
-                for intento in range(1, intentos + 1):
-                    transport = Transport(session=session)
-                    client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", transport=transport)
+                #for intento in range(1, intentos + 1):
+                transport = Transport(session=session)
+                client = zeep.Client(wsdl=self.endpoint_fe + "?wsdl", transport=transport)
 
-                    try:
+                try:
                         # Configurar autenticación
                         #if comprobante is not None:
 
@@ -524,15 +525,24 @@ class Afip():
                             # Enviar la solicitud
 
                             response = client.service.FECAESolicitar(Auth=auth, FeCAEReq=fe_cae_req)
-                            if self.plataforma == 1:
-                                self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, idFactCab)
-                            else:
-                                self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
 
-                    except Exception as e:
-                        return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante)
+                            if self.plataforma == 1:
+                                print(":: RESPUESTA DE AUTORIZACION DE COMPROBANTE EXITOSO ::")
+                                resp = self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, idFactCab)
+                                return resp
+                            else:
+                                return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante, nroComprobanteInterno)
+
+                except Exception as e:
+                    return self.autorizarComprobanteRespuesta(id_usuario, response, comprobante)
 
             except Exception as e:
+                jsonResp = {
+                    "control": "ERROR",
+                    "codigo": "400",
+                    "errorMsg" : {ultimo},
+                    "mensaje": f"Error enviando factura a {self.nombre_entidad}: {str(e)}"
+                }
 
                 logging.error(f"Error enviando factura a "+str(self.nombre_entidad)+": "+str({e}))
                 raise Exception(f"Error enviando factura a "+str(+str(self.nombre_entidad))+": "+str(e))
@@ -540,13 +550,18 @@ class Afip():
 
     def reautorizarComprobante(self, id_usuario, comprobante=None):
         intentos = self.intentos
-        for intento in range(1, intentos + 1):
-            print(":: REAUTORIZAR COMPROBANTE ::")
+        #for intento in range(1, intentos + 1):
+        print(":: REAUTORIZAR COMPROBANTE ::")
 
     def autorizarComprobanteRespuesta(self, id_usuario, respuesta, comprobante=None, nro_comp_interno=0):
+        print("=======================================================")
+        print(":: RESPUESTA DE AUTORIZACION DE COMPROBANTE ::")
+        print(":: "+str(respuesta)+" ::")
+        print("=======================================================")
+
         try:
             # Verificar si hay errores
-            if respuesta["Errors"]:
+            if respuesta["Errors"] :
                 errores = respuesta["Errors"]["Err"]
                 if self.plataforma == 2:
                   self.borraErrorARCASybase(1, id_usuario, comprobante)
@@ -582,19 +597,20 @@ class Afip():
 
 
 
-               #logging.error(respuesta["Errors"]["Err"][0]["Msg"])
-            # Verificar si el comprobante fue generado con éxito
+
             elif hasattr(respuesta, "FeCabResp") and respuesta.FeCabResp:
                 # Verificar si el resultado es exitoso
 
                 if hasattr(respuesta.FeCabResp, "Resultado") and respuesta.FeCabResp.Resultado == "A":
-                    logging.info("✅ Comprobante autorizado con éxito !!")
-                    if self.plataforma == 2:
-                        self.actualizarComprobanteSybase(id_usuario, comprobante, respuesta, nro_comp_interno)
-                    else:
-                        self.actualizarComprobante(id_usuario, comprobante, respuesta, nro_comp_interno)
 
-                    #self.g(id_usuario, respuesta, comprobante)
+                    if self.plataforma == 2:
+                        resp = self.actualizarComprobanteSybase(id_usuario, comprobante, respuesta, nro_comp_interno)
+                        return resp
+                    else:
+                        resp = self.actualizarComprobante(id_usuario, comprobante, respuesta, nro_comp_interno)
+                        return resp
+
+
 
                 else:
                     # Comprobante no autorizado
@@ -632,7 +648,7 @@ class Afip():
                 # Si el resultado no es exitoso
                 return json.dumps({
                     "control": "ERROR",
-                    "mensaje": "El comprobante no fue generado con éxito.",
+                    "mensaje": "El comprobante no fue generado.",
                     "datos": fe_cab_resp
                 }, indent=4, ensure_ascii=False)
 
@@ -1258,13 +1274,13 @@ class Afip():
         from zeep import Plugin
         class LoggingPlugin(Plugin):
             def egress(self, envelope, http_headers, operation, binding_options):
-                print("===== REQUEST XML =====")
-                print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
+                #print("===== REQUEST XML =====")
+                #print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
                 return envelope, http_headers
 
             def ingress(self, envelope, http_headers, operation):
-                print("===== RESPONSE XML =====")
-                print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
+                #print("===== RESPONSE XML =====")
+                #print(etree.tostring(envelope, pretty_print=True, encoding="unicode"))
                 return envelope, http_headers
 
         return LoggingPlugin()

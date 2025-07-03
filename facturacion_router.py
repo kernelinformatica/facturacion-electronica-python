@@ -13,41 +13,78 @@ wsfe_instance = wsfe()
 
 # **🔹 Autorizar factura electrónica**
 @facturacion_bp.route('/solicitarCae', methods=['POST'])
-def autorizarComprobante():
+def autorizarComprobante(test = False):
+
+    if test == True:
+        id_usuario = 60
+        idFactCab = 2880
+        idTipoCbte = 1
+        idPtoVta = 1
+        idFactCabRelacionado = 0
+    else:
+        parametros = request.get_json()
+        id_usuario = parametros.get("id_usuario", 0)
+        idFactCab = parametros.get("idFactCab", 0)
+        idTipoCbte = parametros.get("idCteTipo", 0)
+        idPtoVta = parametros.get("idPtoVenta", 0)
+        idFactCabRelacionado = parametros.get("idFactCabRelacionado", 0)
 
 
-    # Leer JSON del body
-    parametros = request.get_json()
-    id_usuario = parametros.get("id_usuario", 0)  # O ajusta según tu payload
-    idFactCab = parametros.get("idFactCab", 0)
-    idTipoCbte = parametros.get("cbteTipo", 0)
-    idPtoVta = parametros.get("cbtePtoVta", 0)
-    idFactCabRelacionado = parametros.get("idFactCabRelacionado", 0)
 
-    if id_usuario == 0:
+
+    if id_usuario == 0 or id_usuario is None:
         logging.error("❌ ID de usuario no proporcionado")
         return jsonify({"control": "ERROR", "mensaje": "ID de usuario no proporcionado"}), 400
 
-    if not idFactCab:
+    if not idFactCab or idFactCab is None:
         logging.error("❌ El comprobante a autorizar no pudo ser detectado")
         return jsonify({"control": "ERROR", "mensaje": "El comprobante a autorizar no pudo ser detectado"}), 400
 
+    parametros = {
+        "idFactCab": idFactCab,
+        "idFactCabRelacionado": idFactCabRelacionado,
+        "cbtePtoVta": idPtoVta,
+        "cbteTipo": idTipoCbte,
+        "cbteFch": "1900-01-01"
+    }
     try:
-        parametros = {
-            "idFactCab": idFactCab,
-            "idFactCabRelacionado": idFactCabRelacionado,
-            "cbtePtoVta": idPtoVta,
-            "cbteTipo": idTipoCbte,
-            "cbteFch": "2025-06-18",
+        respuesta = wsfe_instance.autorizarComprobante(id_usuario, parametros)
+        respuesta = json.loads(respuesta)
 
-        }
+        # Si la respuesta es None
+        if respuesta is None:
+            logging.error("Respuesta inesperada del servicio de AFIP (None)")
+            return jsonify({"control": "ERROR", "codigo": "500", "mensaje": "Respuesta inesperada del servicio de AFIP"}), 500
 
-        # Procesar la factura
-        resultado = wsfe_instance.autorizarComprobante(id_usuario, parametros)
-        return resultado
+        if respuesta is not None:
+            if respuesta["control"] == "ERROR":
+                return jsonify({
+                    "control": "ERROR",
+                    "codigo":400,
+                    "mensaje": respuesta["mensaje"]
+                }), 400
+            elif respuesta["control"] == "OK":
+                # Puedes personalizar los datos que envías al frontend aquí
+               return jsonify({
+                    "control": "OK",
+                    "codigo": 200,
+                    "mensaje": respuesta["mensaje"],
+                    "cbte_autorizado": respuesta["datos"],
+                    "FactCab":respuesta["FactCab"],
+                    "FactVentas":respuesta["FactVentas"],
+                    "Master":respuesta["Master"]
+
+                }), 200
+
+            else:
+                return jsonify(respuesta), 200
+
+
+
     except Exception as e:
-        logging.error(f"Error en autorizar el comprobante: {e}")
-        return jsonify({"control": "ERROR", "mensaje": str(e)}), 500
+        logging.error(f"Error 500 en autorizar el comprobante: {e}")
+        return jsonify({"control": "ERROR", "codigo": 500, "mensaje": str(e)}), 500
+
 
 # **🔹 Validar conexión con AFIP**
 @facturacion_bp.route('/validarConexion', methods=['GET'])
